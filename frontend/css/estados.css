@@ -1,0 +1,11 @@
+.chart-state {
+  margin: 14px 4px 0;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.chart-state.ok { color: #347c24; }
+.chart-state.cargando { color: #765d2b; }
+.chart-state.error { color: #a34235; }
+.chart-state.vacio,
+.chart-state.demo { color: #725f43; }

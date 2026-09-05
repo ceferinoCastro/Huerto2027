@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Administración | Huerto Vivo</title>
+  <meta name="description" content="Administración de sensores, crecimiento de plantas e importaciones Hanna de Huerto Vivo.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="plants.css?v=5">
+  <link rel="stylesheet" href="hanna.css?v=2">
+  <link rel="stylesheet" href="campaigns.css?v=2">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-mark" aria-hidden="true">HV</div>
+    <div>
+      <strong>Huerto Vivo</strong>
+      <span>Administración del huerto</span>
+    </div>
+    <span id="api-badge" class="badge neutral">Comprobando API</span>
+  </header>
+
+  <main>
+    <section class="intro">
+      <div>
+        <p class="eyebrow">Herramientas educativas</p>
+        <h1>Gestión del Huerto Vivo</h1>
+        <p>Configura sensores, registra el crecimiento y carga mediciones del equipo Hanna.</p>
+      </div>
+    </section>
+
+    <div id="status" class="status loading" role="status" aria-live="polite">Cargando información de Pica…</div>
+
+    <nav class="tabs" aria-label="Secciones de administración">
+      <button class="tab-button active" type="button" data-tab="associations" aria-selected="true">Asociaciones sensores</button>
+      <button class="tab-button" type="button" data-tab="plants" aria-selected="false">Medición de plantas</button>
+      <button class="tab-button" type="button" data-tab="hanna" aria-selected="false">Cargar CSV Hanna</button>
+      <button class="tab-button" type="button" data-tab="campaigns" aria-selected="false">Campañas del huerto</button>
+    </nav>
+
+    <section id="associations-view" class="tab-view">
+    <div class="associations-locality">
+      <label class="locality-picker">
+        <span>Localidad / colegio</span>
+        <select id="localidad">
+          <option value="colchane">Colchane</option>
+          <option value="camina">Camiña</option>
+          <option value="huara">Huara</option>
+          <option value="la-tirana">La Tirana</option>
+          <option value="pica" selected>Pica</option>
+          <option value="huayquique">Huayquique</option>
+        </select>
+      </label>
+    </div>
+    <section class="context-grid" aria-label="Contexto de la localidad">
+      <article class="context-card school-card">
+        <span class="context-icon" aria-hidden="true">⌂</span>
+        <div><small>Colegio</small><strong id="colegio">—</strong><span id="localidad-nombre">—</span></div>
+      </article>
+      <article class="context-card">
+        <span class="context-icon" aria-hidden="true">▣</span>
+        <div><small>Datalogger</small><strong id="device-sn">—</strong><span>device_sn asociado</span></div>
+      </article>
+      <article class="context-card">
+        <span class="context-icon" aria-hidden="true">⌁</span>
+        <div><small>Sensores detectados</small><strong id="sensor-count">0</strong><span id="sensor-summary">Sin información</span></div>
+      </article>
+      <article class="context-card">
+        <span class="context-icon" aria-hidden="true">≋</span>
+        <div><small>Variables técnicas</small><strong id="variable-count">0</strong><span id="variable-summary">Sin información</span></div>
+      </article>
+    </section>
+
+    <section class="workspace">
+      <article class="panel form-panel">
+        <header class="panel-heading">
+          <div><p class="eyebrow">Nueva configuración</p><h2 id="form-title">Crear asociación</h2></div>
+          <button id="cancel-edit" class="text-button" type="button" hidden>Cancelar edición</button>
+        </header>
+
+        <form id="association-form">
+          <input id="association-id" type="hidden">
+          <div class="form-grid">
+            <label><span>Clave educativa *</span><input id="clave-educativa" name="clave_educativa" required placeholder="temperatura_tierra"></label>
+            <label><span>Nombre educativo *</span><input id="nombre-educativo" name="nombre_educativo" required placeholder="Temperatura de la tierra"></label>
+            <label><span>Sensor *</span><select id="sensor-sn" name="sensor_sn" required><option value="">Selecciona un sensor</option></select></label>
+            <label><span>Variable técnica *</span><select id="variable-tecnica" name="variable_tecnica" required><option value="">Selecciona una variable</option></select></label>
+            <label><span>Unidad *</span><input id="unidad" name="unidad" required placeholder="°C"></label>
+            <label><span>Categoría *</span><select id="categoria" name="categoria" required><option value="temperatura">Temperatura</option><option value="humedad">Humedad</option><option value="suelo">Suelo</option><option value="agua">Agua</option><option value="ambiente">Ambiente</option><option value="sistema">Sistema</option><option value="otra">Otra</option></select></label>
+            <label><span>Ubicación</span><input id="ubicacion" name="ubicacion" placeholder="Cama de cultivo 1"></label>
+            <label><span>Profundidad (cm)</span><input id="profundidad-cm" name="profundidad_cm" type="number" min="0" step="0.1" placeholder="15"></label>
+            <label><span>Orden *</span><input id="orden" name="orden" type="number" min="0" step="1" value="1" required></label>
+            <label class="checkbox-field"><input id="visible-frontend" name="visible_frontend" type="checkbox" checked><span>Visible en el frontend escolar</span></label>
+          </div>
+          <div class="form-actions">
+            <button id="save-button" class="primary-button" type="submit">Guardar asociación</button>
+            <small id="save-help">La disponibilidad de guardado depende de FastAPI.</small>
+          </div>
+        </form>
+      </article>
+
+      <aside class="panel detected-panel">
+        <header class="panel-heading"><div><p class="eyebrow">Inventario detectado</p><h2>Sensores de la localidad</h2></div></header>
+        <div id="detected-sensors" class="detected-list"><p class="empty">Cargando sensores…</p></div>
+      </aside>
+    </section>
+
+    <section class="panel table-panel">
+      <header class="panel-heading">
+        <div><p class="eyebrow">Configuración actual</p><h2>Configuración de carteles</h2></div>
+        <span id="association-count" class="count-pill">Cargando catálogo…</span>
+      </header>
+      <div id="endpoint-notice" class="endpoint-notice" hidden>
+        <strong>No fue posible consultar las asociaciones Zentra.</strong>
+        <span id="endpoint-notice-detail">No se pudo conectar con FastAPI.</span>
+        <button id="retry-associations" type="button">Reintentar</button>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Orden</th><th>Variable educativa</th><th>Fuente</th><th>Sensor/equipo/origen</th><th>Variable técnica/campo</th><th>Estado</th><th>Visible</th><th>Acciones</th></tr></thead>
+          <tbody id="associations-body"><tr><td colspan="8" class="empty-cell">Cargando configuración de carteles…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="poster-preview" class="panel poster-preview-panel" aria-labelledby="poster-preview-title">
+      <header class="panel-heading poster-preview-heading">
+        <div>
+          <p class="eyebrow">Diagnóstico educativo</p>
+          <h2 id="poster-preview-title">Vista previa de los carteles</h2>
+          <p>Comprueba los datos que recibirá la interfaz infantil con las asociaciones actuales.</p>
+        </div>
+        <button id="test-associations" class="primary-button" type="button">Probar asociaciones</button>
+      </header>
+      <div id="poster-preview-summary" class="poster-preview-summary loading" role="status" aria-live="polite">Cargando...</div>
+      <div id="poster-preview-grid" class="poster-preview-grid" aria-live="polite"></div>
+    </section>
+    </section>
+
+    <section id="plants-view" class="tab-view" hidden>
+      <section class="plants-toolbar panel">
+        <div>
+          <p class="eyebrow">Registro diario</p>
+          <h2>Altura de las plantas</h2>
+          <p>Mide solo las plantas disponibles. Los campos vacíos no se guardarán.</p>
+        </div>
+        <div class="toolbar-fields">
+          <label><span>Localidad / colegio</span><select id="plants-localidad"><option value="colchane">Colchane</option><option value="camina">Camiña</option><option value="huara">Huara</option><option value="la-tirana">La Tirana</option><option value="pica" selected>Pica</option><option value="huayquique">Huayquique</option></select></label>
+          <label><span>Fecha de medición</span><input id="plants-fecha" type="date" required></label>
+        </div>
+      </section>
+
+      <section class="plant-summary-grid">
+        <article class="plant-summary"><small>Colegio</small><strong id="plants-colegio">—</strong><span id="plants-localidad-nombre">Pica</span></article>
+        <article class="plant-summary highlight"><small>Promedio del día</small><strong><span id="daily-average">—</span> <em>cm</em></strong><span id="measured-count">0 plantas medidas</span></article>
+        <article class="plant-summary"><small>Último promedio guardado</small><strong><span id="last-average">—</span> <em>cm</em></strong><span id="last-average-date">Sin datos</span></article>
+      </section>
+
+      <section class="plants-workspace">
+        <article class="panel measurements-panel">
+          <header class="panel-heading"><div><p class="eyebrow">20 plantas</p><h2>Mediciones diarias</h2></div><span class="unit-pill">centímetros</span></header>
+          <form id="plants-form">
+            <div id="plants-inputs" class="plants-inputs"></div>
+            <label class="observation-field"><span>Observación general opcional</span><textarea id="plants-observation" maxlength="1000" rows="3" placeholder="Estado general, clima o incidencia observada…"></textarea></label>
+            <div class="form-actions"><button id="save-plants" class="primary-button" type="submit">Guardar mediciones</button><small>Los valores existentes para la misma fecha y planta se actualizarán.</small></div>
+          </form>
+        </article>
+
+        <article class="panel chart-panel">
+          <header class="panel-heading"><div><p class="eyebrow">Últimos 30 días</p><h2>Promedio diario</h2></div><span id="chart-count" class="count-pill">0 días</span></header>
+          <div id="plant-chart" class="plant-chart"><p class="empty">Cargando promedios…</p></div>
+        </article>
+      </section>
+    </section>
+
+    <section id="hanna-view" class="tab-view" hidden>
+      <section class="hanna-hero panel">
+        <div>
+          <p class="eyebrow">Importación Hanna HI981420</p>
+          <h2>Cargar mediciones de agua</h2>
+          <p>Selecciona el archivo exportado por el datalogger. El serial identifica automáticamente el huerto asociado.</p>
+        </div>
+        <span class="hanna-mark" aria-hidden="true">CSV</span>
+      </section>
+
+      <div id="hanna-status" class="status empty" role="status" aria-live="polite">Selecciona un archivo CSV Hanna para comenzar.</div>
+
+      <section class="hanna-layout">
+        <article class="panel hanna-upload-panel">
+          <header class="panel-heading"><div><p class="eyebrow">Buzón de archivos</p><h2>Subir archivo CSV</h2></div></header>
+          <form id="hanna-form">
+            <label class="file-drop" for="hanna-file"><strong>Seleccionar archivo Hanna</strong><span id="hanna-file-name">Solo archivos .CSV</span><input id="hanna-file" name="archivo" type="file" accept=".csv,text/csv" required></label>
+            <div id="hanna-preview" class="hanna-preview" hidden></div>
+            <label id="hanna-college-field" hidden><span>Colegio o huerto del equipo</span><select id="hanna-colegio"><option value="">Selecciona un colegio</option></select></label>
+            <button id="hanna-submit" class="primary-button" type="submit" disabled>Analiza un archivo para continuar</button>
+          </form>
+          <p class="privacy-note">El archivo se procesa en FastAPI y se guarda separado de las lecturas Zentra.</p>
+        </article>
+
+        <article class="panel hanna-summary-panel">
+          <header class="panel-heading"><div><p class="eyebrow">Identidad del equipo</p><h2>Asociación detectada</h2></div></header>
+          <div id="hanna-current-summary" class="hanna-metrics"><p class="empty">Selecciona un CSV para reconocer su equipo.</p></div>
+        </article>
+      </section>
+
+      <section id="hanna-upload-result" class="panel hanna-result" hidden>
+        <header class="panel-heading"><div><p class="eyebrow">Última importación</p><h2>Resumen de carga</h2></div></header>
+        <div id="hanna-result-content"></div>
+      </section>
+
+      <section class="panel hanna-equipment-panel">
+        <header class="panel-heading"><div><p class="eyebrow">Administración</p><h2>Equipos Hanna</h2></div><span id="hanna-equipment-count" class="count-pill">0 equipos</span></header>
+        <div id="hanna-equipment-list" class="hanna-equipment-list"><p class="empty">Cargando equipos…</p></div>
+      </section>
+    </section>
+
+    <section id="campaigns-view" class="tab-view" hidden>
+      <section class="campaign-toolbar panel">
+        <div><p class="eyebrow">Ciclo del cultivo</p><h2>Campañas del huerto</h2><p>Registra el periodo entre la siembra y la cosecha sin duplicar sensores ni mediciones.</p></div>
+        <label><span>Colegio / huerto</span><select id="campaign-college"><option value="">Selecciona un colegio</option></select></label>
+      </section>
+      <div id="campaign-status" class="status empty" role="status" aria-live="polite">Selecciona un colegio.</div>
+      <section class="campaign-layout">
+        <article class="panel campaign-active-panel">
+          <header class="panel-heading"><div><p class="eyebrow">Estado actual</p><h2>Campaña activa</h2></div><button id="campaign-new-trigger" class="primary-button" type="button" disabled>+ Nueva campaña</button></header>
+          <p id="campaign-new-help" class="campaign-blocked-message" hidden>Para iniciar una nueva campaña, primero debe finalizar o cancelar la campaña activa.</p>
+          <div id="campaign-active"><p class="empty">Selecciona un colegio para consultar su campaña.</p></div>
+        </article>
+        <article class="panel campaign-new-panel" hidden>
+          <header class="panel-heading"><div><p id="campaign-form-context" class="eyebrow">Nuevo ciclo</p><h2 id="campaign-form-title">Iniciar campaña</h2></div></header>
+          <form id="campaign-form" data-mode="create" novalidate>
+            <label id="campaign-name-field" hidden><span>Nombre de campaña</span><input id="campaign-name" name="nombre" maxlength="200"><small data-campaign-error="nombre"></small></label>
+            <label><span>Cultivo</span><input name="cultivo" id="campaign-crop" required maxlength="120" placeholder="Tomate"><small data-campaign-error="cultivo"></small></label>
+            <label><span>Fecha de siembra</span><input name="fecha_siembra" id="campaign-sowing" type="date" required><small data-campaign-error="fecha_siembra"></small></label>
+            <label><span>Cosecha estimada</span><input name="fecha_cosecha_estimada" id="campaign-estimated" type="date" required><small data-campaign-error="fecha_cosecha_estimada"></small></label>
+            <label><span>Observaciones opcionales</span><textarea name="observaciones" id="campaign-notes" maxlength="2000" rows="4"></textarea><small data-campaign-error="observaciones"></small></label>
+            <div class="campaign-form-actions"><button id="campaign-submit" class="primary-button" type="submit">Iniciar campaña</button><button id="campaign-form-cancel" class="text-button" type="button">Cerrar formulario</button></div>
+          </form>
+        </article>
+      </section>
+      <section id="campaign-finish-panel" class="panel campaign-new-panel" hidden aria-labelledby="campaign-finish-title">
+        <h2 id="campaign-finish-title">Finalizar campaña</h2>
+        <form id="campaign-finish-form" novalidate>
+          <label><span>Fecha real de término / cosecha</span><input id="campaign-finish-date" name="fecha_cosecha_real" type="date" required><small data-campaign-error="fecha_cosecha_real"></small></label>
+          <label><span>Resumen o resultado final</span><textarea id="campaign-finish-result" name="resultado_final" required minlength="3" maxlength="3000" rows="4"></textarea><small data-campaign-error="resultado_final"></small></label>
+          <label><span>Observaciones finales (opcional)</span><textarea id="campaign-finish-notes" name="observaciones_finales" maxlength="3000" rows="3"></textarea><small data-campaign-error="observaciones_finales"></small></label>
+          <label><span><input id="campaign-finish-confirm" name="confirmar" type="checkbox" required> Confirmo que deseo finalizar esta campaña y conservarla en el historial.</span><small data-campaign-error="confirmar"></small></label>
+          <div class="campaign-form-actions"><button id="campaign-finish-submit" class="primary-button" type="submit">Confirmar finalización</button><button id="campaign-finish-close" class="text-button" type="button">Cerrar formulario</button></div>
+        </form>
+      </section>
+      <section class="panel campaign-history-panel">
+        <header class="panel-heading"><div><p class="eyebrow">Ciclos anteriores</p><h2>Historial</h2></div><span id="campaign-count" class="count-pill">0 campañas</span></header>
+        <div id="campaign-history"><p class="empty">Sin campañas para mostrar.</p></div>
+      </section>
+    </section>
+  </main>
+
+  <footer>Huerto Vivo Escolar · Configuración administrativa local</footer>
+  <script type="module" src="app.js?v=9"></script>
+</body>
+</html>

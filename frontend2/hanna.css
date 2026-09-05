@@ -1,0 +1,29 @@
+.hanna-hero { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 24px; }
+.hanna-hero h2 { font-size: clamp(28px, 4vw, 40px); }
+.hanna-hero p:last-child { max-width: 720px; margin: 8px 0 0; color: var(--muted); }
+.hanna-mark { display: grid; place-items: center; width: 76px; height: 76px; flex: 0 0 auto; border-radius: 22px; color: white; background: var(--green-dark); font-size: 20px; font-weight: 950; letter-spacing: .08em; }
+.hanna-layout { display: grid; grid-template-columns: minmax(320px, .85fr) minmax(0, 1.15fr); gap: 20px; align-items: start; }
+.hanna-upload-panel, .hanna-summary-panel, .hanna-result { padding: 22px; }
+#hanna-form { display: grid; gap: 16px; }
+#hanna-form > label { display: grid; gap: 7px; }
+#hanna-college-field[hidden] { display: none; }
+.hanna-preview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: #fbf8eb; }
+.hanna-preview[hidden] { display: none; }.hanna-preview div { display: grid; gap: 3px; }.hanna-preview small { color: var(--muted); font-weight: 750; }.hanna-preview strong { overflow-wrap: anywhere; }
+.file-drop { display: grid; gap: 7px; padding: 22px; border: 2px dashed #a9b99c; border-radius: 14px; color: var(--green-dark); background: #f7f8e9; text-align: center; cursor: pointer; }
+.file-drop:hover { border-color: var(--green); background: #f0f5d9; }
+.file-drop span { color: var(--muted); font-size: 12px; font-weight: 650; overflow-wrap: anywhere; }
+.file-drop input { min-height: 38px; padding: 6px; border: 0; background: transparent; }
+.privacy-note { margin: 16px 0 0; color: var(--muted); font-size: 12px; }
+.hanna-metrics, .hanna-result-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.hanna-metric { display: grid; gap: 4px; min-height: 88px; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: #fbf8eb; }
+.hanna-metric small { color: var(--muted); font-weight: 750; }
+.hanna-metric strong { align-self: end; font-size: 19px; overflow-wrap: anywhere; }
+.hanna-metric.good strong { color: var(--green-dark); }.hanna-metric.warning strong { color: var(--red); }
+.hanna-result { margin-top: 20px; }
+.hanna-equipment-panel { margin-top: 20px; padding: 22px; }
+.hanna-equipment-list { display: grid; gap: 10px; }.hanna-equipment-card { display: grid; grid-template-columns: 1.1fr 1.3fr .8fr auto; align-items: center; gap: 12px; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: #fbf8eb; }.hanna-equipment-card small, .hanna-equipment-card span { color: var(--muted); font-size: 12px; }.hanna-equipment-card strong, .hanna-equipment-card span { display: block; }.hanna-equipment-actions { display: flex; flex-wrap: wrap; gap: 7px; }.hanna-equipment-actions button { padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--green-dark); background: white; font-size: 11px; font-weight: 800; }
+.hanna-warning { margin: 0 0 16px; padding: 13px 15px; border-left: 4px solid var(--amber); border-radius: 8px; color: #68470f; background: #fff2c8; font-weight: 750; }
+.hanna-variables { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+.hanna-variables span { padding: 6px 9px; border-radius: 999px; color: var(--green-dark); background: var(--lime); font-size: 12px; font-weight: 800; }
+@media (max-width: 900px) { .hanna-layout { grid-template-columns: 1fr; }.hanna-equipment-card { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 680px) { .hanna-hero { align-items: flex-start; }.hanna-mark { width: 58px; height: 58px; border-radius: 16px; font-size: 15px; }.hanna-upload-panel, .hanna-summary-panel, .hanna-result, .hanna-equipment-panel { padding: 16px; }.hanna-metrics, .hanna-result-grid, .hanna-preview, .hanna-equipment-card { grid-template-columns: 1fr; } }

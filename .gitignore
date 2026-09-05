@@ -1,0 +1,118 @@
+# ==============================
+# Entornos y variables sensibles
+# ==============================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.json
+credentials.json
+config.local.*
+
+# ==============================
+# Python
+# ==============================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ==============================
+# Entornos virtuales
+# ==============================
+venv/
+env/
+ENV/
+.venv/
+.conda/
+conda-env/
+
+# ==============================
+# Jupyter / Notebooks
+# ==============================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ==============================
+# Datos y modelos (pesados / sensibles)
+# ==============================
+*.csv
+*.parquet
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.pt
+*.pth
+*.onnx
+*.ckpt
+data/raw/
+data/processed/
+models/checkpoints/
+*.log
+
+# Si necesitas versionar datasets pequeños de ejemplo,
+# quita la línea correspondiente arriba o usa excepciones:
+# !data/sample/ejemplo.csv
+
+# ==============================
+# Cache de herramientas
+# ==============================
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.cache/
+*.cover
+.coverage
+.coverage.*
+htmlcov/
+
+# ==============================
+# Editor / IDE
+# ==============================
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# ==============================
+# Sistema operativo
+# ==============================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==============================
+# Node (si tu app tiene frontend)
+# ==============================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+build/
+
+# ==============================
+# Claude Code / herramientas locales
+# ==============================
+.claude/
+*.local
