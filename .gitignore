@@ -116,3 +116,12 @@ build/
 # ==============================
 .claude/
 *.local
+
+# ==============================
+# Respaldos y archivos locales
+# ==============================
+.return-points/
+.Rhistory
+repomix-output.*
+frontend/js/Copia de graficos.js
+frontend/img/huerto-escolar-limpio-recortado_rsp_00.png
