@@ -1,15 +1,30 @@
-import {localidades,sensores} from "./datos-demo.js?v=6";
-import {fetchHistorialEducativo,fetchUltimasEducativas} from "./api.js?v=7";
-import {svgGrafico,svgGraficoAltura,svgGraficoTemperaturaAgua,svgGraficoTemperaturas} from "./graficos.js?v=5";
-import {SENSOR_CARD_CATALOG,SENSOR_GROUP_CATALOG} from "./catalogo-carteles.js?v=2";
-import {estadoCartel} from "./estado-carteles.js?v=1";
+import {localidades,sensores} from "./datos-demo.js?v=8";
+import {fetchCampaniaActiva,fetchHistorialEducativo,fetchUltimasEducativas} from "./api.js?v=8";
+import {svgGrafico,svgGraficoCrecimiento,svgGraficoTemperaturaAgua,svgGraficoTemperaturas} from "./graficos.js?v=10";
+import {cargarCatalogoVisual,SENSOR_GROUP_CATALOG} from "./catalogo-carteles.js?v=3";
 
-let localidad="colchane",colegioId=null,selectedEducationalVariableKey=null,categoriaActiva="temperatura",periodo="7d",dashboard={items:[]},historiales={},estadosHistorial={},cicloCarga=0;
+let SENSOR_CARD_CATALOG=[];
+import {estadoCartel} from "./estado-carteles.js?v=3";
+
+let localidad="colchane",colegioId=null,selectedEducationalVariableKey=null,categoriaActiva="temperatura",periodo="7d",dashboard={items:[]},historiales={},estadosHistorial={},cicloCarga=0,rangosCampanaActiva={};
+function evaluarSemaforo(valor,rango){
+ if(!rango||valor==null)return null;
+ const min=rango.min??null,max=rango.max??null;
+ if(min==null&&max==null)return null;
+ const v=Number(valor);
+ if(!Number.isFinite(v))return null;
+ if((min!=null&&v<min)||(max!=null&&v>max))return "red";
+ const span=min!=null&&max!=null?max-min:null;
+ const tolerancia=span!=null?span*0.1:Math.abs((max??min)||1)*0.1;
+ if(min!=null&&v-min<=tolerancia)return "yellow";
+ if(max!=null&&max-v<=tolerancia)return "yellow";
+ return "green";
+}
 const horasPeriodo={"24h":24,"7d":168,"30d":720};
 const grupos={
- temperatura:{titulo:"TEMPERATURA",icono:"🌡️",color:"#ee5918",claves:["temperatura_aire","temperatura_tierra","temperatura_bajo_tierra","temperatura_agua"],botones:["Aire","Tierra","Bajo tierra","Agua"]},
- humedad:{titulo:"HUMEDAD",icono:"💧",color:"#1388c4",claves:["humedad_aire","humedad_tierra","humedad_hojas"],botones:["☁️","💧","🍃"]},
- crecimiento:{titulo:"CRECIMIENTO",icono:"🌱",color:"#62a72c",claves:["altura_planta"],botones:["Altura promedio"]},
+ temperatura:{titulo:"TEMPERATURA",icono:"🌡️",color:"#ee5918",claves:["temperatura_aire","temperatura_bajo_tierra","temperatura_agua"],botones:["Aire","Bajo tierra","Agua"]},
+ humedad:{titulo:"HUMEDAD",icono:"💧",color:"#1388c4",claves:["humedad_aire","humedad_tierra"],botones:["Aire","Tierra"]},
+ crecimiento:{titulo:"CRECIMIENTO",icono:"🌱",color:"#62a72c",claves:["altura_planta","largo_raiz"],botones:["Altura promedio","Largo raíz"]},
  agua:{titulo:"CALIDAD DEL AGUA",icono:"💧",color:"#7d3b96",claves:["ph_agua","sales_agua"],botones:["pH","SAL"]}
 };
 const categorias={temperatura:{etiqueta:"Temperatura",icono:"🌡️"},humedad:{etiqueta:"Humedad",icono:"💧"},crecimiento:{etiqueta:"Crecimiento",icono:"🌱"},agua:{etiqueta:"Calidad del agua",icono:"🧪"}};
@@ -19,8 +34,16 @@ const $=selector=>document.querySelector(selector);
 const clavesEducativas=Object.keys(sensores);
 const itemsResumen=()=>Array.isArray(dashboard?.items)?dashboard.items:[];
 const variable=clave=>itemsResumen().find(item=>item.variable===clave)||null;
-const convertirValor=(clave,valor,unidades)=>clave==="humedad_tierra"&&unidades==="m³/m³"?Number(valor)*100:Number(valor);
-const unidadVisible=(clave,unidad)=>clave==="humedad_tierra"&&unidad==="m³/m³"?"%":unidad||sensores[clave]?.unidad||"";
+const convertirValor=(clave,valor,unidades)=>{
+ if(clave==="humedad_tierra"){
+  const num=Number(valor);
+  if(!Number.isFinite(num))return NaN;
+  if(unidades==="m³/m³"||unidades==="m3/m3"||!unidades||num<=1)return num*100;
+  return num;
+ }
+ return Number(valor);
+};
+const unidadVisible=(clave,unidad)=>clave==="humedad_tierra"&&(unidad==="m³/m³"||unidad==="m3/m3"||!unidad)?"%":unidad||sensores[clave]?.unidad||"";
 const colegioActual=()=>localidades[localidad].colegio;
 
 const iconosCartel={
@@ -82,11 +105,15 @@ function crearCartelesVisuales(){
  const reglas=SENSOR_CARD_CATALOG.filter(item=>item.ruler).map(reglaMedicion).join("");
  conexiones.innerHTML=reglas+objetivos.map(objetivo=>{const item=objetivo.items.find(sensor=>sensor.showConnection)||objetivo.items[0],claves=objetivo.items.map(sensor=>sensor.key).join(" "),linea=item.showConnection?'<path d="'+trazadoConexion(item)+'"/>':"";return '<g class="sensor-connection" data-sensor-target="'+objetivo.id+'" data-sensor-keys="'+claves+'">'+linea+'<circle cx="'+item.target.x+'" cy="'+item.target.y+'" r=".65"/><circle class="sensor-connection__pulse" cx="'+item.target.x+'" cy="'+item.target.y+'" r="1.25"/></g>'}).join("");
  marcadores.innerHTML=objetivos.map((objetivo,indice)=>{const item=objetivo.items[0],claves=objetivo.items.map(sensor=>sensor.key).join(" "),etiqueta=objetivo.items.length>1?SENSOR_GROUP_CATALOG.find(grupo=>grupo.key===item.group).label:item.label;return '<button type="button" class="sensor-marker" data-sensor-marker="'+objetivo.id+'" data-sensor-keys="'+claves+'" style="--marker-x:'+item.target.x+'%;--marker-y:'+item.target.y+'%;--marker-accent:'+SENSOR_GROUP_CATALOG.find(grupo=>grupo.key===item.group).accent+'" aria-label="Ver '+etiqueta+'" aria-pressed="false"><span aria-hidden="true">'+(indice+1)+'</span></button>'}).join("");
- carteles.innerHTML=SENSOR_GROUP_CATALOG.map(grupo=>{const items=SENSOR_CARD_CATALOG.filter(item=>item.group===grupo.key),tarjetas=items.map(item=>{const descripcionRegla=item.ruler?'. '+item.ruler.label:"";return '<button type="button" class="sensor-card sensor-card--neutral" data-sensor-card="'+item.key+'" data-measurement-state="loading" style="--card-x:'+item.position.desktop.x+';--card-y:'+item.position.desktop.y+';--mobile-order:'+item.position.mobile.order+'" aria-label="'+item.label+'. Cargando'+descripcionRegla+'" aria-pressed="false">'+iconoCartel(item.icon)+'<span class="sensor-card__copy"><span class="sensor-card__label">'+item.label+'</span><span class="sensor-card__value" data-sensor-value>Cargando…</span></span></button>'}).join("");return '<section class="sensor-group" data-sensor-group="'+grupo.key+'" style="--group-accent:'+grupo.accent+'"><h3 class="sensor-group__title">'+grupo.label+'</h3>'+tarjetas+'</section>'}).join("");
+ carteles.innerHTML=SENSOR_GROUP_CATALOG.map(grupo=>{const items=SENSOR_CARD_CATALOG.filter(item=>item.group===grupo.key),tarjetas=items.map(item=>{const descripcionRegla=item.ruler?'. '+item.ruler.label:"";return '<button type="button" class="sensor-card sensor-card--neutral" data-sensor-card="'+item.key+'" data-measurement-state="loading" style="--card-x:'+item.position.desktop.x+';--card-y:'+item.position.desktop.y+';--mobile-order:'+item.position.mobile.order+'" aria-label="'+item.label+'. Cargando'+descripcionRegla+'" aria-pressed="false">'+iconoCartel(item.icon)+'<span class="status-dot" data-sensor-status-dot hidden aria-hidden="true"></span><span class="sensor-card__copy"><span class="sensor-card__label">'+item.label+'</span><span class="sensor-card__value" data-sensor-value>Cargando…</span></span></button>'}).join("");return '<section class="sensor-group" data-sensor-group="'+grupo.key+'" style="--group-accent:'+grupo.accent+'"><h3 class="sensor-group__title">'+grupo.label+'</h3>'+tarjetas+'</section>'}).join("");
  document.querySelectorAll("[data-sensor-marker]").forEach(marcador=>marcador.addEventListener("click",()=>resaltarMarcador(marcador)));
  document.querySelectorAll("[data-sensor-card]").forEach((cartel,indice)=>{cartel.addEventListener("click",()=>resaltarCartel(cartel.dataset.sensorCard,{desplazar:true}));cartel.addEventListener("keydown",evento=>{if(!["ArrowRight","ArrowDown","ArrowLeft","ArrowUp"].includes(evento.key))return;evento.preventDefault();const paso=["ArrowRight","ArrowDown"].includes(evento.key)?1:-1,carteles=[...document.querySelectorAll("[data-sensor-card]")],siguiente=(indice+paso+carteles.length)%carteles.length;carteles[siguiente].focus()})});
+ if(selectedEducationalVariableKey&&!SENSOR_CARD_CATALOG.some(item=>item.key===selectedEducationalVariableKey))selectedEducationalVariableKey=null;
+}
+function configurarInteraccionesGlobalesEscena(){
  document.addEventListener("pointerdown",evento=>{if(!evento.target.closest("[data-sensor-card],[data-sensor-marker]"))restaurarCarteles()});
  document.addEventListener("keydown",evento=>{if(evento.key==="Escape"){selectedEducationalVariableKey=null;renderEducationalState()}});
+ $(".huerto-scene__canvas")?.addEventListener("click",evento=>{if(evento.target.closest("[data-sensor-marker]"))return;selectedEducationalVariableKey=null;renderEducationalState()});
 }
 
 function actualizarRegla(item,estado){
@@ -96,7 +123,7 @@ function actualizarRegla(item,estado){
 }
 function actualizarCarteles(items){
  const lecturas=new Map((Array.isArray(items)?items:[]).map(item=>[item?.variable,item]));
- SENSOR_CARD_CATALOG.forEach(item=>{const cartel=document.querySelector(`[data-sensor-card="${item.key}"]`),valor=cartel?.querySelector("[data-sensor-value]"),estado=estadoCartel(lecturas.get(item.key),item);if(!cartel||!valor)return;valor.textContent=estado.text;cartel.dataset.measurementState=estado.status;cartel.dataset.measurementSource=estado.source||"";cartel.title=estado.updatedText;const descripcionRegla=item.ruler?`. ${item.ruler.label}`:"",actualizacion=estado.updatedText?`. ${estado.updatedText}`:"";cartel.setAttribute("aria-label",`${item.label}. ${estado.text}${actualizacion}${descripcionRegla}`);actualizarRegla(item,estado)});
+ SENSOR_CARD_CATALOG.forEach(item=>{const cartel=document.querySelector(`[data-sensor-card="${item.key}"]`),valor=cartel?.querySelector("[data-sensor-value]"),estado=estadoCartel(lecturas.get(item.key),item);if(!cartel||!valor)return;valor.textContent=estado.text;cartel.dataset.measurementState=estado.status;cartel.dataset.measurementSource=estado.source||"";cartel.title=estado.updatedText;const descripcionRegla=item.ruler?`. ${item.ruler.label}`:"",actualizacion=estado.updatedText?`. ${estado.updatedText}`:"";cartel.setAttribute("aria-label",`${item.label}. ${estado.text}${actualizacion}${descripcionRegla}`);actualizarRegla(item,estado);const punto=cartel.querySelector("[data-sensor-status-dot]");if(punto){const color=evaluarSemaforo(estado.status==="available"?estado.value:null,rangosCampanaActiva[item.key]);punto.className="status-dot"+(color?" status-dot-"+color:"");punto.hidden=!color}});
 }
 function anunciarCarteles(mensaje){const estado=$("#educational-detail-status");if(estado)estado.textContent=mensaje}
 
@@ -108,6 +135,14 @@ function renderSelectedVariableDetail(){
  const lectura=variable(item.key),estado=estadoCartel(lectura,item),grupo=SENSOR_GROUP_CATALOG.find(grupo=>grupo.key===item.group),iconoPanel=$("#educational-detail-icon"),iconoSeleccionado=document.querySelector(`[data-sensor-card="${item.key}"] .sensor-card__icon`);panel.dataset.detailState=estado.status;panel.className="educational-detail educational-detail--"+estado.status;panel.style.setProperty("--detail-accent",grupo?.accent||"#31564c");iconoPanel.replaceChildren();if(iconoSeleccionado)iconoPanel.append(iconoSeleccionado.cloneNode(true));$("#educational-detail-title").textContent=item.label;$("#educational-detail-school").textContent=colegioActual()||"Nombre no disponible";$("#educational-detail-locality").textContent=localidades[localidad]?.nombre||"Localidad no disponible";$("#educational-detail-source").textContent=nombresFuente[estado.source]||"Fuente no disponible";$("#educational-detail-explanation").textContent=item.explanation;contexto.hidden=false;
  const etiquetas={loading:"Cargando información…",available:"Dato disponible",no_data:"Sin datos disponibles",error:"Sin conexión"},mensajes={loading:"Cargando información…",available:"",no_data:"Todavía no existe una medición de esta variable para el huerto seleccionado.",error:"No fue posible conectar con el servidor. Puedes intentar nuevamente con el botón Actualizar."};$("#educational-detail-state").textContent=etiquetas[estado.status];$("#educational-detail-message").textContent=mensajes[estado.status];envolturaValor.hidden=estado.status!=="available";filaFecha.hidden=estado.status!=="available";
  if(estado.status==="available"){$("#educational-detail-value").textContent=estado.formattedValue;$("#educational-detail-unit").textContent=estado.unit;$("#educational-detail-date").textContent=estado.updatedText?estado.updatedText.replace(/^Actualizado:\s*/,""):"Fecha no disponible"}
+ const rango=rangosCampanaActiva[item.key],bloqueRango=$("#educational-detail-range");
+ if(rango&&(rango.min!=null||rango.max!=null)){
+  const min=rango.min!=null?rango.min+(item.unit?" "+item.unit:""):"—",max=rango.max!=null?rango.max+(item.unit?" "+item.unit:""):"—";
+  $("#educational-detail-range-text").textContent="Mín. "+min+" — Máx. "+max;
+  const colorRango=estado.status==="available"?evaluarSemaforo(estado.value,rango):null,puntoRango=$("#educational-detail-range-dot");
+  puntoRango.className="status-dot"+(colorRango?" status-dot-"+colorRango:"");puntoRango.hidden=!colorRango;
+  bloqueRango.hidden=false;
+ }else bloqueRango.hidden=true;
  aplicarResaltado([item.key]);
 }
 function renderEducationalState(){actualizarCarteles(itemsResumen());renderSelectedVariableDetail()}
@@ -121,7 +156,10 @@ function valoresHistorial(clave){
 }
 function puntosHistorial(clave){
  const historial=historiales[clave];
- return (historial?.items||[]).map(item=>{const valor=convertirValor(clave,item?.value,historial?.unidad),timestamp=Number(item?.timestamp_utc)*1000||Date.parse(item?.datetime);return {valor,timestamp,etiqueta:item?.datetime||new Date(timestamp).toISOString()}}).filter(item=>Number.isFinite(item.valor)&&Number.isFinite(item.timestamp));
+ const items=(historial?.items||[]).map(item=>{const valor=convertirValor(clave,item?.value,historial?.unidad),timestamp=Number(item?.timestamp_utc)*1000||Date.parse(item?.datetime);return {valor,timestamp,etiqueta:item?.datetime||new Date(timestamp).toISOString()}}).filter(item=>Number.isFinite(item.valor)&&Number.isFinite(item.timestamp)&&item.timestamp>0);
+ if(!items.length)return items;
+ const maxTimestamp=Math.max(...items.map(item=>item.timestamp)),horasMax=horasPeriodo[periodo]||168;
+ return items.filter(item=>item.timestamp>=maxTimestamp-horasMax*3600*1000);
 }
 function crearLocalidades(){
  $("#localidades").innerHTML=Object.entries(localidades).map(([clave,item])=>'<button data-localidad="'+clave+'" class="'+(clave===localidad?"active":"")+'" aria-pressed="'+(clave===localidad)+'"><span class="locality-icon">'+item.icono+'</span><span><b>'+item.nombre+'</b><small>'+item.colegio+'</small></span><em>'+item.tipo+'</em></button>').join("");
@@ -131,8 +169,20 @@ function crearCategorias(){
  $("#research-categories").innerHTML=Object.entries(categorias).map(([clave,item])=>'<button type="button" data-categoria="'+clave+'" class="'+(clave===categoriaActiva?"active":"")+'" style="--category-color:'+grupos[clave].color+'" aria-controls="grafico-'+clave+'" aria-pressed="'+(clave===categoriaActiva)+'"><span>'+item.icono+'</span><b>'+item.etiqueta+'</b></button>').join("");
  document.querySelectorAll("[data-categoria]").forEach(button=>button.onclick=()=>seleccionarCategoria(button.dataset.categoria));
 }
-function clavesGrupo(nombre){const grupo=grupos[nombre],modo=modos[nombre];return modo==="all"||nombre==="temperatura"&&modo==="temperatura_todas"?grupo.claves:[modo]}
-function seriesGrupo(nombre){return clavesGrupo(nombre).map(clave=>({valores:valoresHistorial(clave),color:sensores[clave].color}))}
+function rangoVariable(clave){
+ const estatico=sensores[clave]||{},campania=rangosCampanaActiva[clave];
+ if(!campania||(campania.min==null&&campania.max==null))return {min:estatico.min,max:estatico.max,ideal:estatico.ideal};
+ const min=campania.min??estatico.min,max=campania.max??estatico.max;
+ return {min,max,ideal:[campania.min??estatico.ideal?.[0]??min,campania.max??estatico.ideal?.[1]??max]};
+}
+function clavesVisiblesGrupo(nombre){
+ const grupo=grupos[nombre],pares=grupo.claves.map((clave,indice)=>({clave,boton:grupo.botones[indice]}));
+ if(!SENSOR_CARD_CATALOG.length)return pares;
+ const visibles=pares.filter(par=>SENSOR_CARD_CATALOG.some(item=>item.key===par.clave));
+ return visibles.length?visibles:pares;
+}
+function clavesGrupo(nombre){const modo=modos[nombre],visibles=clavesVisiblesGrupo(nombre).map(par=>par.clave);return modo==="all"||nombre==="temperatura"&&modo==="temperatura_todas"?visibles:[modo]}
+function seriesGrupo(nombre){return clavesGrupo(nombre).map(clave=>({puntos:puntosHistorial(clave),color:sensores[clave].color}))}
 function estadoGrafico(nombre){
  const claves=clavesGrupo(nombre),estados=claves.map(clave=>estadosHistorial[clave]||"cargando"),disponibles=claves.filter(clave=>valoresHistorial(clave).length);
  if(estados.includes("cargando"))return {tipo:"cargando",texto:"Cargando historial real…"};
@@ -141,24 +191,26 @@ function estadoGrafico(nombre){
  if(estados.includes("sin_asociacion"))return {tipo:"vacio",texto:"Esta variable aún no tiene un sensor asociado"};
  return {tipo:"vacio",texto:"El sensor asociado no tiene mediciones en este periodo"};
 }
-function tarjetaCrecimiento(grupo){
- const historial=historiales.altura_planta,items=(historial?.items||[]).map(item=>({fecha:String(item.datetime).slice(0,10),altura_promedio_cm:Number(item.value),plantas_medidas:item.plantas_medidas||0})),ultimo=items.at(-1),estado=estadoGrafico("crecimiento");
- const resumen=ultimo?'<div class="growth-summary"><div><small>Último promedio</small><strong>'+ultimo.altura_promedio_cm.toLocaleString("es-CL",{maximumFractionDigits:2})+' <span>cm</span></strong></div><div><small>Fecha de última medición</small><b>'+ultimo.fecha+'</b></div><div><small>Plantas medidas</small><b>'+ultimo.plantas_medidas+'</b></div></div>':"";
- const grafico=items.length?svgGraficoAltura(items):'<div class="growth-empty">'+estado.texto+'</div>';
- return '<article id="grafico-crecimiento" class="chart-card growth-card" style="--accent:'+grupo.color+'"><div class="chart-school">📍 '+colegioActual()+'</div><header><div>'+grupo.icono+' <b>'+grupo.titulo+'</b></div><div class="chart-controls"><button class="active growth-only" type="button" aria-pressed="true">Altura promedio</button><span>cm</span></div></header><h3>Altura promedio de las plantas</h3><div class="chart-state '+estado.tipo+'">'+estado.texto+'</div>'+resumen+'<div class="chart-wrap">'+grafico+'</div></article>';
+const camposCrecimiento={altura_planta:{campo:"altura_promedio_cm",tituloEje:"Altura promedio",titulo:"Altura promedio de las plantas",etiquetaResumen:"Último promedio"},largo_raiz:{campo:"largo_raiz_promedio_cm",tituloEje:"Largo de raíz",titulo:"Largo de la raíz visible",etiquetaResumen:"Última medición"}};
+function tarjetaCrecimiento(grupo,controles){
+ const modo=modos.crecimiento,definicion=camposCrecimiento[modo],historial=historiales[modo];
+ const items=(historial?.items||[]).filter(item=>Number.isFinite(Date.parse(item?.datetime))&&Date.parse(item.datetime)>0).map(item=>({fecha:String(item.datetime).slice(0,10),[definicion.campo]:Number(item.value),plantas_medidas:item.plantas_medidas||0})),ultimo=items.at(-1),estado=estadoGrafico("crecimiento");
+ const resumen=ultimo?'<div class="growth-summary"><div><small>'+definicion.etiquetaResumen+'</small><strong>'+ultimo[definicion.campo].toLocaleString("es-CL",{maximumFractionDigits:2})+' <span>cm</span></strong></div><div><small>Fecha de última medición</small><b>'+ultimo.fecha+'</b></div><div><small>Plantas medidas</small><b>'+ultimo.plantas_medidas+'</b></div></div>':"";
+ const grafico=items.length?svgGraficoCrecimiento(items,definicion.campo,definicion.tituloEje):'<div class="growth-empty">'+estado.texto+'</div>';
+ return '<article id="grafico-crecimiento" class="chart-card growth-card" style="--accent:'+grupo.color+'"><div class="chart-school">📍 '+colegioActual()+'</div><header><div>'+grupo.icono+' <b>'+grupo.titulo+'</b></div><div class="chart-controls">'+controles+'<span>cm</span></div></header><h3>'+definicion.titulo+'</h3><div class="chart-state '+estado.tipo+'">'+estado.texto+'</div>'+resumen+'<div class="chart-wrap">'+grafico+'</div></article>';
 }
 function tarjetaTemperaturaAgua(grupo,controles){
- const historial=historiales.temperatura_agua,items=(historial?.items||[]).map(item=>({fecha:String(item.datetime).slice(0,10),valor:Number(item.value)})),estado=estadoGrafico("temperatura"),grafico=items.length?svgGraficoTemperaturaAgua(items):'<div class="growth-empty">'+estado.texto+'</div>';
+ const historial=historiales.temperatura_agua,items=(historial?.items||[]).filter(item=>Number.isFinite(Date.parse(item?.datetime))&&Date.parse(item.datetime)>0).map(item=>({fecha:String(item.datetime).slice(0,10),valor:Number(item.value)})),estado=estadoGrafico("temperatura"),grafico=items.length?svgGraficoTemperaturaAgua(items):'<div class="growth-empty">'+estado.texto+'</div>';
  return '<article id="grafico-temperatura" class="chart-card water-temperature-card" style="--accent:'+grupo.color+'"><div class="chart-school">📍 '+colegioActual()+'</div><header><div>'+grupo.icono+' <b>'+grupo.titulo+'</b></div><div class="chart-controls temperature-controls">'+controles+'<span>°C</span></div></header><h3>Temperatura del agua del estanque</h3><div class="chart-state '+estado.tipo+'">'+estado.texto+'</div><div class="chart-wrap">'+grafico+'</div></article>';
 }
 function tarjetaTemperaturas(grupo,controles){
- const nombres={temperatura_aire:"Aire",temperatura_tierra:"Tierra",temperatura_bajo_tierra:"Bajo tierra",temperatura_agua:"Agua"},series=grupos.temperatura.claves.map(clave=>({clave,nombre:nombres[clave],color:sensores[clave].color,puntos:puntosHistorial(clave)})),tieneDatos=series.some(serie=>serie.puntos.length),faltantes=series.filter(serie=>!serie.puntos.length).map(serie=>serie.nombre),cargando=series.some(serie=>(estadosHistorial[serie.clave]||"cargando")==="cargando");
+ const series=clavesVisiblesGrupo("temperatura").map(({clave,boton})=>({clave,nombre:boton,color:sensores[clave].color,puntos:puntosHistorial(clave)})),tieneDatos=series.some(serie=>serie.puntos.length),faltantes=series.filter(serie=>!serie.puntos.length).map(serie=>serie.nombre),cargando=series.some(serie=>(estadosHistorial[serie.clave]||"cargando")==="cargando");
  const estado=cargando?{tipo:"cargando",texto:"Cargando temperaturas del huerto…"}:!tieneDatos?{tipo:"vacio",texto:"No hay temperaturas disponibles en este periodo"}:faltantes.length?{tipo:"vacio",texto:"Sin datos disponibles: "+faltantes.join(", ")}:{tipo:"ok",texto:"Comparación de las temperaturas disponibles"};
- const leyenda='<div class="temperature-legend">'+series.map(serie=>'<span class="'+(!serie.puntos.length?"missing":"")+'"><i style="--series-color:'+serie.color+'"></i>'+serie.nombre+'</span>').join("")+'</div>',grafico=tieneDatos?svgGraficoTemperaturas(series):'<div class="growth-empty">'+estado.texto+'</div>';
+ const leyenda='<div class="series-legend">'+series.map(serie=>'<span class="'+(!serie.puntos.length?"missing":"")+'"><i style="--series-color:'+serie.color+'"></i>'+serie.nombre+'</span>').join("")+'</div>',grafico=tieneDatos?svgGraficoTemperaturas(series,periodo):'<div class="growth-empty">'+estado.texto+'</div>';
  return '<article id="grafico-temperatura" class="chart-card all-temperatures-card" style="--accent:'+grupo.color+'"><div class="chart-school">📍 '+colegioActual()+'</div><header><div>'+grupo.icono+' <b>'+grupo.titulo+'</b></div><div class="chart-controls temperature-controls">'+controles+'<span>°C</span></div></header><h3>Comparación de temperaturas del huerto</h3><div class="chart-state '+estado.tipo+'">'+estado.texto+'</div>'+leyenda+'<div class="chart-wrap">'+grafico+'</div></article>';
 }
 function crearGraficos(){
- $("#charts").innerHTML=Object.entries(grupos).map(([nombre,grupo])=>{if(nombre==="crecimiento")return tarjetaCrecimiento(grupo);const modo=modos[nombre],todas=nombre==="temperatura"&&modo==="temperatura_todas",base=sensores[modo==="all"||todas?grupo.claves[0]:modo],estado=estadoGrafico(nombre),controles=grupo.claves.map((clave,indice)=>'<button data-grupo="'+nombre+'" data-modo="'+clave+'" class="'+(modo===clave?"active":"")+'" title="'+(sensores[clave].nombreCompleto||sensores[clave].nombre)+'">'+grupo.botones[indice]+'</button>').join("")+(nombre==="temperatura"?'<button data-grupo="temperatura" data-modo="temperatura_todas" class="'+(modo==="temperatura_todas"?"active":"")+'" title="Todas las temperaturas">Todas</button>':nombre!=="agua"?'<button data-grupo="'+nombre+'" data-modo="all" class="'+(modo==="all"?"active":"")+'" title="Comparar">📈</button>':"");if(nombre==="temperatura"&&modo==="temperatura_agua")return tarjetaTemperaturaAgua(grupo,controles);if(todas)return tarjetaTemperaturas(grupo,controles);const series=seriesGrupo(nombre),tieneDatos=series.some(serie=>serie.valores.length),grafico=tieneDatos?svgGrafico(series,periodo,base.min,base.max,modo==="all"?null:base.ideal,nombre==="temperatura"?"°":nombre==="humedad"?"%":""):'<div class="growth-empty">'+estado.texto+'</div>',subtitulo=nombre==="temperatura"?'<h3 class="temperature-variable-title">'+base.nombre+'</h3>':"";return '<article id="grafico-'+nombre+'" class="chart-card" style="--accent:'+grupo.color+'"><div class="chart-school">📍 '+colegioActual()+'</div><header><div>'+grupo.icono+' <b>'+grupo.titulo+'</b></div><div class="chart-controls '+(nombre==="temperatura"?"temperature-controls":"")+'">'+controles+'<span>'+base.unidad+'</span></div></header>'+subtitulo+'<div class="chart-state '+estado.tipo+'">'+estado.texto+'</div><div class="chart-wrap">'+grafico+'</div></article>'}).join("");
+ $("#charts").innerHTML=Object.entries(grupos).map(([nombre,grupo])=>{const visibles=clavesVisiblesGrupo(nombre);if(modos[nombre]!=="all"&&modos[nombre]!=="temperatura_todas"&&!visibles.some(par=>par.clave===modos[nombre])&&visibles.length)modos[nombre]=visibles[0].clave;const modo=modos[nombre],todas=nombre==="temperatura"&&modo==="temperatura_todas",claveInicial=visibles[0]?.clave||grupo.claves[0],base=sensores[modo==="all"||todas?claveInicial:modo],estado=estadoGrafico(nombre),controles=visibles.map(({clave,boton})=>'<button data-grupo="'+nombre+'" data-modo="'+clave+'" class="'+(modo===clave?"active":"")+'" title="'+(sensores[clave].nombreCompleto||sensores[clave].nombre)+'">'+boton+'</button>').join("")+(nombre==="temperatura"?'<button data-grupo="temperatura" data-modo="temperatura_todas" class="'+(modo==="temperatura_todas"?"active":"")+'" title="Todas las temperaturas">Todas</button>':nombre!=="agua"&&nombre!=="crecimiento"?'<button data-grupo="'+nombre+'" data-modo="all" class="'+(modo==="all"?"active":"")+'" title="Comparar">Todas</button>':"");if(nombre==="crecimiento")return tarjetaCrecimiento(grupo,controles);if(nombre==="temperatura"&&modo==="temperatura_agua")return tarjetaTemperaturaAgua(grupo,controles);if(todas)return tarjetaTemperaturas(grupo,controles);const claveBase=modo==="all"||todas?claveInicial:modo,rango=rangoVariable(claveBase),series=seriesGrupo(nombre),tieneDatos=series.some(serie=>serie.puntos.length),grafico=tieneDatos?svgGrafico(series,periodo,rango.min,rango.max,modo==="all"?null:rango.ideal,nombre==="temperatura"?"°":nombre==="humedad"?"%":""):'<div class="growth-empty">'+estado.texto+'</div>',subtitulo=nombre==="temperatura"?'<h3 class="temperature-variable-title">'+base.nombre+'</h3>':"",leyenda=modo==="all"?'<div class="series-legend">'+visibles.map(({clave,boton})=>'<span class="'+(!puntosHistorial(clave).length?"missing":"")+'"><i style="--series-color:'+sensores[clave].color+'"></i>'+boton+'</span>').join("")+'</div>':"";return '<article id="grafico-'+nombre+'" class="chart-card" style="--accent:'+grupo.color+'"><div class="chart-school">📍 '+colegioActual()+'</div><header><div>'+grupo.icono+' <b>'+grupo.titulo+'</b></div><div class="chart-controls '+(nombre==="temperatura"?"temperature-controls":"")+'">'+controles+'<span>'+base.unidad+'</span></div></header>'+subtitulo+'<div class="chart-state '+estado.tipo+'">'+estado.texto+'</div>'+leyenda+'<div class="chart-wrap">'+grafico+'</div></article>'}).join("");
  document.querySelectorAll("[data-modo]").forEach(button=>button.onclick=()=>seleccionarModo(button.dataset.grupo,button.dataset.modo));
 }
 function actualizar(){const loc=localidades[localidad];$("#explore-label").textContent="🔎 Exploración en vivo · "+loc.nombre;$("#school-context").textContent="📍 "+colegioActual();$("#history-label").textContent="▦ Historial del huerto · "+loc.nombre;$("#history-school").textContent="📍 "+colegioActual()+" · Compara los periodos y descubre cómo responde nuestra planta.";crearLocalidades();crearCategorias();renderEducationalState();crearGraficos()}
@@ -169,14 +221,27 @@ async function cargarHistorialClaves(claves,ciclo){
 function clavesGraficosVisibles(){return Object.keys(grupos).flatMap(clavesGrupo)}
 function seleccionarCategoria(categoria){categoriaActiva=categoria;crearCategorias();document.getElementById("grafico-"+categoria)?.scrollIntoView({behavior:"smooth",block:"start"})}
 async function seleccionarModo(grupo,modo){modos[grupo]=modo;crearGraficos();await cargarHistorialClaves(clavesGrupo(grupo),cicloCarga)}
+async function actualizarRangosCampanaActiva(ciclo){
+ if(!colegioId){rangosCampanaActiva={};return}
+ try{const data=await fetchCampaniaActiva(colegioId);if(ciclo!==cicloCarga)return;const campania=data?.item?.estado==="activa"?data.item:null;rangosCampanaActiva=campania?.rangos_variables||{}}
+ catch{if(ciclo===cicloCarga)rangosCampanaActiva={}}
+}
+async function actualizarCatalogoVisual(){
+ try{SENSOR_CARD_CATALOG=await cargarCatalogoVisual();crearCartelesVisuales()}
+ catch{if(!SENSOR_CARD_CATALOG.length)$(".huerto-scene__cards").innerHTML='<p class="huerto-scene__error">No fue posible cargar los carteles del huerto. Intenta recargar la página.</p>'}
+}
 async function cargar(){
- const ciclo=++cicloCarga,localidadSolicitada=localidad,nombreLocalidad=localidades[localidadSolicitada].nombre;dashboard=estadoInicial();colegioId=null;historiales={};estadosHistorial={};document.querySelectorAll(".refresh").forEach(button=>{button.disabled=true;button.textContent="Actualizando…"});$("#source").textContent="● Cargando datos reales…";actualizar();anunciarCarteles("Cargando datos de "+nombreLocalidad);
+ const ciclo=++cicloCarga,localidadSolicitada=localidad,nombreLocalidad=localidades[localidadSolicitada].nombre;dashboard=estadoInicial();colegioId=null;rangosCampanaActiva={};historiales={};estadosHistorial={};document.querySelectorAll(".refresh").forEach(button=>{button.disabled=true;button.textContent="Actualizando…"});$("#source").textContent="● Cargando datos reales…";await actualizarCatalogoVisual();if(ciclo!==cicloCarga)return;actualizar();anunciarCarteles("Cargando datos de "+nombreLocalidad);
  let anuncioFinal="Datos de "+nombreLocalidad+" actualizados";
- try{const data=await fetchUltimasEducativas(localidadSolicitada);if(ciclo!==cicloCarga||localidadSolicitada!==localidad)return;dashboard=data||estadoInicial("no_disponible");colegioId=dashboard.items?.find(item=>item.colegio_id)?.colegio_id||null;const reales=dashboard.items?.filter(item=>item.estado==="ok").length||0;$("#source").textContent=reales?"● Conectado a FastAPI · "+reales+" mediciones reales":"● Conectado a FastAPI · sin mediciones disponibles"}
+ try{const data=await fetchUltimasEducativas(localidadSolicitada);if(ciclo!==cicloCarga||localidadSolicitada!==localidad)return;dashboard=data||estadoInicial("no_disponible");colegioId=dashboard.items?.find(item=>item.colegio_id)?.colegio_id||null;const reales=dashboard.items?.filter(item=>item.estado==="ok").length||0;$("#source").textContent=reales?"● Conectado a FastAPI · "+reales+" mediciones reales":"● Conectado a FastAPI · sin mediciones disponibles";actualizarRangosCampanaActiva(ciclo).then(()=>{if(ciclo===cicloCarga)actualizarCarteles(itemsResumen())})}
  catch{if(ciclo!==cicloCarga||localidadSolicitada!==localidad)return;dashboard=estadoInicial("no_disponible");anuncioFinal="No fue posible conectar con el servidor";$("#source").textContent="● FastAPI no disponible"}
  finally{if(ciclo===cicloCarga&&localidadSolicitada===localidad){actualizar();anunciarCarteles(anuncioFinal);await cargarHistorialClaves(clavesGraficosVisibles(),ciclo);document.querySelectorAll(".refresh").forEach(button=>{button.disabled=false;button.textContent="↻ Actualizar datos"})}}
 }
 function seleccionarLocalidad(clave){localidad=clave;colegioId=null;dashboard=estadoInicial();historiales={};estadosHistorial={};actualizar();cargar()}
 document.querySelectorAll(".refresh").forEach(button=>button.onclick=cargar);
 document.querySelectorAll("[data-period]").forEach(button=>button.onclick=async()=>{periodo=button.dataset.period;document.querySelectorAll("[data-period]").forEach(item=>item.classList.toggle("active",item===button));const ciclo=++cicloCarga;historiales={};estadosHistorial={};actualizar();await cargarHistorialClaves(clavesGraficosVisibles(),ciclo)});
-crearCartelesVisuales();dashboard=estadoInicial();actualizar();cargar();
+async function iniciar(){
+ configurarInteraccionesGlobalesEscena();
+ dashboard=estadoInicial();actualizar();cargar();
+}
+iniciar();

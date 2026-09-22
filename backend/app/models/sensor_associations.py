@@ -15,16 +15,11 @@ class SensorAssociationInput(BaseModel):
     colegio_id: str = Field(min_length=1)
     device_sn: str | None = None
     clave_educativa: str = Field(min_length=1, max_length=100)
-    nombre_educativo: str = Field(min_length=1, max_length=160)
     sensor_sn: str | None = None
     sensor_name: str | None = Field(default=None, max_length=160)
     variable_tecnica: str = Field(min_length=1, max_length=160)
-    unidad: str = Field(max_length=40)
-    categoria: str = Field(default="", max_length=80)
     ubicacion: str | None = Field(default=None, max_length=240)
     profundidad_cm: float | None = Field(default=None, ge=0, le=1000)
-    visible_frontend: bool = True
-    orden: int = Field(default=1, ge=0, le=1000)
     source: AssociationSource = "zentra"
 
     @field_validator("localidad")

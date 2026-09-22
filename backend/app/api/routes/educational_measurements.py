@@ -10,9 +10,7 @@ from pymongo.errors import PyMongoError
 from app.api.routes.read_only import downsample_lttb, normalize_locality, serialize_mongo
 from app.services.domain import DomainNotFoundError
 from app.services.educational_measurements import (
-    EDUCATIONAL_DEFINITIONS,
-    EDUCATIONAL_VARIABLES,
-    EDUCATIONAL_NAMES,
+    carteles_by_key,
     educational_catalog,
     empty_measurement,
     public_measurement,
@@ -31,7 +29,7 @@ HANNA_EMPTY_MESSAGES = {
 }
 
 
-def _service_unavailable(variable: str, locality: str) -> JSONResponse:
+def _service_unavailable(variable: str, locality: str, catalog: dict[str, dict[str, Any]]) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         content=empty_measurement(
@@ -39,39 +37,44 @@ def _service_unavailable(variable: str, locality: str) -> JSONResponse:
             "no_disponible",
             "No fue posible consultar esta medición",
             locality=locality,
+            catalog=catalog,
         ),
     )
 
 
-async def _latest(request: Request, locality: str, variable: str) -> dict[str, Any]:
+async def _latest(
+    request: Request,
+    locality: str,
+    variable: str,
+    catalog: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
     college = await request.app.state.mongodb.college_by_locality(locality)
     college_id = str(
         college.get("colegio_id") or college.get("id") or college.get("_id")
     ) if college else None
-    definition = EDUCATIONAL_DEFINITIONS.get(variable, {})
-    if definition.get("fuente") == "hanna":
+    definition = catalog.get(variable, {})
+    if definition.get("fuente_sugerida") == "hanna":
         if college_id is None:
             return empty_measurement(
                 variable,
                 "sin_equipo_hanna",
                 HANNA_EMPTY_MESSAGES["sin_equipo_hanna"],
                 locality=locality,
+                catalog=catalog,
             )
         resolved = await request.app.state.mongodb.latest_hanna_field_for_college(
-            college_id, definition["variable_tecnica"]
+            college_id, definition["variable_tecnica_sugerida"]
         )
         association = {
             "colegio_id": college_id,
             "localidad": locality,
             "clave_educativa": variable,
-            "nombre_educativo": definition["nombre"],
             "source": "hanna",
             "device_sn": None,
             "sensor_sn": resolved.get("serial_hanna"),
-            "sensor_name": resolved.get("modelo") or definition.get("sensor_modelo"),
+            "sensor_name": resolved.get("modelo") or definition.get("sensor_modelo_sugerido"),
             "instrument_id": resolved.get("instrument_id"),
-            "variable_tecnica": definition["variable_tecnica"],
-            "unidad": definition["unidad"],
+            "variable_tecnica": definition["variable_tecnica_sugerida"],
             "estado_asociacion": "automatica_hanna",
         }
         if resolved["estado"] != "ok":
@@ -80,18 +83,19 @@ async def _latest(request: Request, locality: str, variable: str) -> dict[str, A
                 resolved["estado"],
                 HANNA_EMPTY_MESSAGES[resolved["estado"]],
                 locality=locality,
+                catalog=catalog,
                 association=association,
             )
         document = resolved["documento"]
         measurement = {
-            "value": document[definition["variable_tecnica"]],
-            "units": definition["unidad"],
+            "value": document[definition["variable_tecnica_sugerida"]],
+            "units": definition.get("unidad"),
             "datetime": document.get("datetime_local"),
             "serial_hanna": resolved.get("serial_hanna"),
             "modelo": resolved.get("modelo"),
             "instrument_id": resolved.get("instrument_id"),
         }
-        return public_measurement(association, measurement)
+        return public_measurement(association, measurement, catalog)
 
     association = await request.app.state.mongodb.sensor_association(locality, variable)
     if association is None:
@@ -100,6 +104,7 @@ async def _latest(request: Request, locality: str, variable: str) -> dict[str, A
             "sin_asociacion",
             "Variable sin sensor asociado",
             locality=locality,
+            catalog=catalog,
             college_id=college_id,
         )
     measurement = await request.app.state.mongodb.latest_associated_measurement(association)
@@ -114,9 +119,10 @@ async def _latest(request: Request, locality: str, variable: str) -> dict[str, A
             "sin_datos",
             message,
             locality=locality,
+            catalog=catalog,
             association=association,
         )
-    return public_measurement(association, measurement)
+    return public_measurement(association, measurement, catalog)
 
 
 @router.get("/ultima")
@@ -125,20 +131,15 @@ async def latest_educational_summary(
     request: Request,
 ) -> Any:
     locality = normalize_locality(localidad)
-    variables = list(EDUCATIONAL_NAMES)
     try:
-        associations = await request.app.state.mongodb.list_sensor_associations(locality)
-        for association in associations:
-            variable = association.get("clave_educativa")
-            if (
-                variable
-                and variable not in variables
-                and association.get("visible_frontend") is not False
-                and association.get("estado_asociacion") in {"asociada", "provisional"}
-            ):
-                variables.append(variable)
+        carteles = await request.app.state.mongodb.list_carteles()
+        catalog = carteles_by_key(carteles)
+        variables = [
+            item["clave_educativa"] for item in carteles
+            if item.get("visible_frontend", True) is not False
+        ]
         items = await asyncio.gather(*(
-            _latest(request, locality, variable)
+            _latest(request, locality, variable, catalog)
             for variable in variables
         ))
     except (PyMongoError, RuntimeError):
@@ -148,22 +149,14 @@ async def latest_educational_summary(
                 "localidad": locality,
                 "estado": "no_disponible",
                 "mensaje": "No fue posible consultar las mediciones",
-                "catalogo": educational_catalog(),
-                "items": [
-                    empty_measurement(
-                        variable,
-                        "no_disponible",
-                        "No fue posible consultar esta medición",
-                        locality=locality,
-                    )
-                    for variable in variables
-                ],
+                "catalogo": [],
+                "items": [],
             },
         )
     return {
         "localidad": locality,
         "count": len(items),
-        "catalogo": educational_catalog(),
+        "catalogo": educational_catalog(carteles),
         "items": serialize_mongo(items),
     }
 
@@ -175,12 +168,16 @@ async def latest_educational_measurement(
     request: Request,
 ) -> Any:
     locality = normalize_locality(localidad)
-    if variable not in EDUCATIONAL_NAMES:
+    try:
+        catalog = carteles_by_key(await request.app.state.mongodb.list_carteles())
+    except (PyMongoError, RuntimeError):
+        return _service_unavailable(variable, locality, {})
+    if variable not in catalog:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Variable educativa no soportada")
     try:
-        return serialize_mongo(await _latest(request, locality, variable))
+        return serialize_mongo(await _latest(request, locality, variable, catalog))
     except (PyMongoError, RuntimeError):
-        return _service_unavailable(variable, locality)
+        return _service_unavailable(variable, locality, catalog)
 
 
 def _parse_boundary(value: str, *, end: bool) -> datetime:
@@ -210,7 +207,16 @@ async def educational_measurement_history(
     campania_id: str | None = None,
 ) -> Any:
     locality = normalize_locality(localidad)
-    if variable not in EDUCATIONAL_NAMES:
+    try:
+        catalog = carteles_by_key(await request.app.state.mongodb.list_carteles())
+    except (PyMongoError, RuntimeError):
+        response = empty_measurement(
+            variable, "no_disponible", "No fue posible consultar esta medición",
+            locality=locality, catalog={},
+        )
+        response["items"] = []
+        return JSONResponse(status_code=503, content=response)
+    if variable not in catalog:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Variable educativa no soportada")
     try:
         association = await request.app.state.mongodb.sensor_association(locality, variable)
@@ -221,6 +227,7 @@ async def educational_measurement_history(
                     "sin_asociacion",
                     "Esta variable aún no tiene un sensor asociado",
                     locality=locality,
+                    catalog=catalog,
                 ),
                 "items": [],
             }
@@ -266,6 +273,7 @@ async def educational_measurement_history(
             "no_disponible",
             "No fue posible consultar esta medición",
             locality=locality,
+            catalog=catalog,
         )
         response["items"] = []
         return JSONResponse(status_code=503, content=response)
@@ -285,8 +293,8 @@ async def educational_measurement_history(
         "colegio_id": association["colegio_id"],
         "localidad": locality,
         "variable": variable,
-        "nombre": association["nombre_educativo"],
-        "unidad": association.get("unidad"),
+        "nombre": catalog.get(variable, {}).get("nombre_educativo", variable),
+        "unidad": catalog.get(variable, {}).get("unidad"),
         "fuente": association["source"],
         "estado": state,
         "mensaje": None if normalized else "El sensor asociado aún no tiene mediciones en este periodo",

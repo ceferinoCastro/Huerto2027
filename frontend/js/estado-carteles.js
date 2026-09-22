@@ -67,9 +67,13 @@ export function estadoCartel(lectura, cartel) {
     return { ...base, status: "loading", text: "Cargando…", updatedText: "" };
   }
   if (lectura?.estado === "ok" && lectura.valor !== null && lectura.valor !== "") {
-    const value = Number(lectura.valor);
+    let value = Number(lectura.valor);
     if (Number.isFinite(value)) {
-      const unit = typeof lectura.unidad === "string" ? lectura.unidad.trim() : "";
+      let unit = typeof lectura.unidad === "string" ? lectura.unidad.trim() : "";
+      if (cartel.key === "humedad_tierra" && (unit === "m³/m³" || unit === "m3/m3" || !unit || value <= 1)) {
+        value *= 100;
+        unit = "%";
+      }
       const datetime = typeof lectura.datetime_local === "string" ? lectura.datetime_local : null;
       const formattedDate = formatearFechaMedicion(datetime);
       return {

@@ -1,6 +1,6 @@
 from datetime import date
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class PlantMeasurementInput(BaseModel):
@@ -10,14 +10,16 @@ class PlantMeasurementInput(BaseModel):
 
 class PlantMeasurementItem(BaseModel):
     planta_numero: int
-    altura_cm: float
+    altura_cm: float | None = None
+    largo_raiz_cm: float | None = None
     observacion: str = ""
 
 
 class DailyPlantMeasurementsInput(BaseModel):
     localidad: str = Field(min_length=1)
     fecha: date
-    mediciones: list[PlantMeasurementInput] = Field(min_length=1)
+    mediciones: list[PlantMeasurementInput] = Field(default_factory=list)
+    largo_raiz_cm: float | None = Field(default=None, gt=0)
     observacion: str | None = Field(default=None, max_length=1000)
     colegio_id: str | None = None
     huerto_id: str | None = None
@@ -34,10 +36,17 @@ class DailyPlantMeasurementsInput(BaseModel):
             raise ValueError("planta_numero no puede repetirse")
         return measurements
 
+    @model_validator(mode="after")
+    def requires_some_measurement(self) -> "DailyPlantMeasurementsInput":
+        if not self.mediciones and self.largo_raiz_cm is None:
+            raise ValueError("Debe incluir al menos una altura de planta o el largo de la raíz")
+        return self
+
 
 class DailyPlantAverage(BaseModel):
     fecha: date
-    altura_promedio_cm: float
+    altura_promedio_cm: float | None = None
+    largo_raiz_cm: float | None = None
     plantas_medidas: int
 
 

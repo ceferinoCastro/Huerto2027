@@ -29,8 +29,10 @@ AGRICULTURAL_VARIABLES = (
     "Saturation Extract EC",
     "Air Temperature",
     "Relative Humidity",
+    "Percent Relative Humidity",
     "Vapor Pressure",
     "VPD",
+    "Atmospheric Pressure",
 )
 
 INTERNAL_VARIABLES = (

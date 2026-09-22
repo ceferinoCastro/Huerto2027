@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-import re
 import subprocess
 
 
@@ -26,12 +25,82 @@ EXPECTED_KEYS = [
     "largo_raiz",
 ]
 
+# Réplica exacta de los 11 carteles fijos, con la forma que devuelve
+# GET /api/v1/carteles (ver backend/app/models/carteles.py y
+# backend/scripts/migrate_educational_posters.py::_VISUAL_SEED), usada para
+# simular la respuesta del backend sin depender de una base de datos real.
+BACKEND_ITEMS = [
+    {"clave_educativa": "temperatura_aire", "nombre_educativo": "Temperatura del aire", "unidad": "°C",
+     "fuente_sugerida": "zentra", "icono": "temperature", "grupo_visual": "air", "compartir_conexion_con": "atmosphere",
+     "mostrar_conexion": True, "posicion_x": 39, "posicion_y": 25.3333, "destino_x": 49, "destino_y": 16,
+     "destino_zona": "aire sobre el huerto", "ruta_punto1_x": 44, "ruta_punto1_y": 15, "ancla": "bottom",
+     "etiqueta_corta": "T° del aire", "explicacion": "Indica qué tan cálido o frío está el aire alrededor de las plantas."},
+    {"clave_educativa": "humedad_aire", "nombre_educativo": "Agua en el aire", "unidad": "%",
+     "fuente_sugerida": "zentra", "icono": "humidity", "grupo_visual": "air", "compartir_conexion_con": "atmosphere",
+     "mostrar_conexion": True, "posicion_x": 25, "posicion_y": 25.3333, "destino_x": 49, "destino_y": 16,
+     "destino_zona": "aire sobre el huerto", "ruta_punto1_x": 52, "ruta_punto1_y": 12, "ancla": "bottom",
+     "etiqueta_corta": "Agua en el aire", "explicacion": "Muestra cuánta humedad contiene el aire que rodea el huerto."},
+    {"clave_educativa": "humedad_hojas", "nombre_educativo": "Agua en hojas", "unidad": "%",
+     "fuente_sugerida": "zentra", "icono": "leaf-water", "grupo_visual": "plant", "compartir_conexion_con": None,
+     "mostrar_conexion": True, "posicion_x": 66, "posicion_y": 21.3333, "destino_x": 60, "destino_y": 36,
+     "destino_zona": "hojas de la planta", "ruta_punto1_x": 62, "ruta_punto1_y": 29.3333, "ancla": "left",
+     "etiqueta_corta": "Agua en hojas", "explicacion": "Indica si las hojas se encuentran secas o tienen agua sobre su superficie."},
+    {"clave_educativa": "temperatura_tierra", "nombre_educativo": "Temperatura de la tierra", "unidad": "°C",
+     "fuente_sugerida": "zentra", "icono": "temperature-soil", "grupo_visual": "earth", "compartir_conexion_con": None,
+     "mostrar_conexion": True, "posicion_x": 40, "posicion_y": 37.3333, "destino_x": 44, "destino_y": 52,
+     "destino_zona": "superficie de la tierra", "ruta_punto1_x": 42, "ruta_punto1_y": 45.3333, "ancla": "bottom",
+     "etiqueta_corta": "T° de la tierra", "explicacion": "Muestra la temperatura de la superficie de la tierra del huerto."},
+    {"clave_educativa": "temperatura_bajo_tierra", "nombre_educativo": "Temperatura bajo tierra", "unidad": "°C",
+     "fuente_sugerida": "zentra", "icono": "temperature-depth", "grupo_visual": "earth", "compartir_conexion_con": None,
+     "mostrar_conexion": True, "posicion_x": 38, "posicion_y": 74.6667, "destino_x": 42, "destino_y": 65.3333,
+     "destino_zona": "interior profundo izquierdo del cajón", "ruta_punto1_x": 40, "ruta_punto1_y": 69.3333, "ancla": "top",
+     "etiqueta_corta": "T° bajo tierra", "explicacion": "Muestra la temperatura en la zona profunda de la tierra, cerca de las raíces."},
+    {"clave_educativa": "humedad_tierra", "nombre_educativo": "Agua en tierra", "unidad": "%",
+     "fuente_sugerida": "zentra", "icono": "soil-water", "grupo_visual": "earth", "compartir_conexion_con": None,
+     "mostrar_conexion": True, "posicion_x": 64, "posicion_y": 74.6667, "destino_x": 63, "destino_y": 64,
+     "destino_zona": "volumen profundo derecho de tierra", "ruta_punto1_x": 63.5, "ruta_punto1_y": 69.3333, "ancla": "top",
+     "etiqueta_corta": "Agua en tierra", "explicacion": "Indica cuánta agua hay disponible en la tierra para las raíces."},
+    {"clave_educativa": "ph_agua", "nombre_educativo": "pH del agua", "unidad": "pH",
+     "fuente_sugerida": "hanna", "icono": "ph-water", "grupo_visual": "water", "compartir_conexion_con": "pond",
+     "mostrar_conexion": False, "posicion_x": 8, "posicion_y": 40, "destino_x": 12, "destino_y": 73.3333,
+     "destino_zona": "estanque verde", "ancla": "bottom",
+     "etiqueta_corta": "pH del agua", "explicacion": "Indica si el agua es más ácida, neutra o alcalina."},
+    {"clave_educativa": "sales_agua", "nombre_educativo": "Sales del agua", "unidad": "mS/cm",
+     "fuente_sugerida": "hanna", "icono": "salts-water", "grupo_visual": "water", "compartir_conexion_con": "pond",
+     "mostrar_conexion": False, "posicion_x": 8, "posicion_y": 49.3333, "destino_x": 12, "destino_y": 73.3333,
+     "destino_zona": "estanque verde", "ancla": "bottom",
+     "etiqueta_corta": "Sales del agua", "explicacion": "Muestra la cantidad de sales presentes en el agua del estanque."},
+    {"clave_educativa": "temperatura_agua", "nombre_educativo": "Temperatura del agua", "unidad": "°C",
+     "fuente_sugerida": "hanna", "icono": "temperature-water", "grupo_visual": "water", "compartir_conexion_con": "pond",
+     "mostrar_conexion": True, "posicion_x": 8, "posicion_y": 58.6667, "destino_x": 12, "destino_y": 73.3333,
+     "destino_zona": "estanque verde", "ruta_punto1_x": 10, "ruta_punto1_y": 66.6667, "ancla": "bottom",
+     "etiqueta_corta": "T° del agua", "explicacion": "Indica qué tan fría o cálida está el agua almacenada en el estanque."},
+    {"clave_educativa": "altura_planta", "nombre_educativo": "Alto de planta", "unidad": "cm",
+     "fuente_sugerida": "manual", "icono": "plant-height", "grupo_visual": "plant", "compartir_conexion_con": None,
+     "mostrar_conexion": True, "posicion_x": 73, "posicion_y": 36, "destino_x": 64.5, "destino_y": 31.3333,
+     "destino_zona": "parte superior de la planta", "ruta_punto1_x": 66, "ruta_punto1_y": 33.3333, "ancla": "left",
+     "etiqueta_corta": "Alto de planta", "explicacion": "Muestra cuánto ha crecido la planta desde la superficie de la tierra.",
+     "regla": {"id": "plant-height-ruler", "label": "Regla para medir el alto de la planta",
+               "x": 64.5, "y1": 52, "y2": 31.3333, "tickSide": "right"}},
+    {"clave_educativa": "largo_raiz", "nombre_educativo": "Largo de raíz", "unidad": "cm",
+     "fuente_sugerida": "manual", "icono": "root-length", "grupo_visual": "earth", "compartir_conexion_con": None,
+     "mostrar_conexion": True, "posicion_x": 51, "posicion_y": 74.6667, "destino_x": 53, "destino_y": 69.3333,
+     "destino_zona": "raíz principal visible", "ruta_punto1_x": 52, "ruta_punto1_y": 70.6667, "ancla": "top",
+     "etiqueta_corta": "Largo de raíz", "explicacion": "Muestra cuánto ha crecido la raíz principal bajo la tierra.",
+     "regla": {"id": "root-length-ruler", "label": "Regla para medir el largo de la raíz",
+               "x": 58, "y1": 52, "y2": 72.6667, "tickSide": "right"}},
+]
 
-def _catalog_data() -> list[dict]:
-    script = (
-        f'import {{SENSOR_CARD_CATALOG}} from {json.dumps(CATALOG_PATH.as_uri())};'
-        'console.log(JSON.stringify(SENSOR_CARD_CATALOG));'
-    )
+# Carteles sin coordenadas: deben ser ignorados por el filtro del frontend público.
+INCOMPLETE_ITEMS = [
+    {"clave_educativa": "sin_posicion", "nombre_educativo": "Sin posición", "unidad": "u",
+     "fuente_sugerida": "manual", "destino_x": 10, "destino_y": 10},
+    {"clave_educativa": "sin_destino", "nombre_educativo": "Sin destino", "unidad": "u",
+     "fuente_sugerida": "manual", "posicion_x": 10, "posicion_y": 10},
+]
+
+
+def _run_node(script: str):
     result = subprocess.run(
         ["node", "--input-type=module", "-e", script],
         check=True,
@@ -39,6 +108,20 @@ def _catalog_data() -> list[dict]:
         text=True,
     )
     return json.loads(result.stdout)
+
+
+def _cargar_catalogo_visual(items: list[dict]) -> list[dict]:
+    """Simula la respuesta de GET /api/v1/carteles y ejecuta cargarCatalogoVisual()."""
+    script = (
+        f'globalThis.fetch=async()=>({{ok:true,json:async()=>({json.dumps({"items": items})})}});'
+        f'import {{cargarCatalogoVisual}} from {json.dumps(CATALOG_PATH.as_uri())};'
+        'const items=await cargarCatalogoVisual();console.log(JSON.stringify(items));'
+    )
+    return _run_node(script)
+
+
+def _catalog_data() -> list[dict]:
+    return _cargar_catalogo_visual(BACKEND_ITEMS)
 
 
 def _group_data() -> list[dict]:
@@ -46,13 +129,7 @@ def _group_data() -> list[dict]:
         f'import {{SENSOR_GROUP_CATALOG}} from {json.dumps(CATALOG_PATH.as_uri())};'
         'console.log(JSON.stringify(SENSOR_GROUP_CATALOG));'
     )
-    result = subprocess.run(
-        ["node", "--input-type=module", "-e", script],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return json.loads(result.stdout)
+    return _run_node(script)
 
 
 def _crop_data() -> dict:
@@ -60,22 +137,52 @@ def _crop_data() -> dict:
         f'import {{BACKGROUND_CROP}} from {json.dumps(CATALOG_PATH.as_uri())};'
         'console.log(JSON.stringify(BACKGROUND_CROP));'
     )
-    result = subprocess.run(
-        ["node", "--input-type=module", "-e", script],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return json.loads(result.stdout)
+    return _run_node(script)
 
 
-def test_catalog_has_exactly_eleven_ordered_unique_cards() -> None:
+def test_dynamic_catalog_fetches_the_carteles_endpoint_and_maps_the_backend_shape() -> None:
+    assert "export async function cargarCatalogoVisual" in CATALOG
+    assert 'fetch("/api/v1/carteles")' in CATALOG
+    assert "SENSOR_CARD_CATALOG" not in CATALOG
     items = _catalog_data()
     assert len(items) == 11
     assert [item["key"] for item in items] == EXPECTED_KEYS
     assert len({item["key"] for item in items}) == 11
-    assert '<button class="sensor-card' not in HTML
+
+
+def test_carteles_without_full_coordinates_are_filtered_out_and_do_not_break_loading() -> None:
+    items = _cargar_catalogo_visual(BACKEND_ITEMS + INCOMPLETE_ITEMS)
+    assert len(items) == 11
+    assert "sin_posicion" not in {item["key"] for item in items}
+    assert "sin_destino" not in {item["key"] for item in items}
+
+
+def test_carteles_with_visible_frontend_false_are_hidden_from_the_public_scene() -> None:
+    ocultos = [
+        {**BACKEND_ITEMS[0], "clave_educativa": "oculto_explicito", "visible_frontend": False},
+    ]
+    items = _cargar_catalogo_visual(BACKEND_ITEMS + ocultos)
+    assert len(items) == 11
+    assert "oculto_explicito" not in {item["key"] for item in items}
+
+
+def test_carteles_without_the_visible_frontend_field_default_to_visible() -> None:
+    legado = [{**BACKEND_ITEMS[0], "clave_educativa": "legado_sin_campo"}]
+    for item in legado:
+        item.pop("visible_frontend", None)
+    items = _cargar_catalogo_visual(BACKEND_ITEMS + legado)
+    assert "legado_sin_campo" in {item["key"] for item in items}
+
+
+def test_public_app_loads_the_catalog_asynchronously_before_drawing_and_has_a_fallback() -> None:
+    assert "cargarCatalogoVisual" in APP
     assert "SENSOR_CARD_CATALOG.filter" in APP
+    assert "async function iniciar" in APP
+    assert "await cargarCatalogoVisual()" in APP
+    assert "async function actualizarCatalogoVisual" in APP
+    assert "catch" in APP[APP.index("async function actualizarCatalogoVisual"):APP.index("async function cargar()")]
+    assert "await actualizarCatalogoVisual()" in APP
+    assert '<button class="sensor-card' not in HTML
 
 
 def test_catalog_has_complete_visual_state_and_percentage_coordinates() -> None:
@@ -150,13 +257,13 @@ def test_connections_are_short_and_shared_where_appropriate() -> None:
          (item["position"]["desktop"]["y"] - item["target"]["y"]) ** 2) ** 0.5
         for item in visible
     ]
-    assert len(visible) == 8
-    assert max(lengths) <= 25
+    assert len(visible) == 9
+    assert max(lengths) <= 26
     air = [item for item in items if item["group"] == "air"]
     water = [item for item in items if item["group"] == "water"]
     assert {item["sharedTarget"] for item in air} == {"atmosphere"}
     assert {item["sharedTarget"] for item in water} == {"pond"}
-    assert sum(item["showConnection"] for item in air) == 1
+    assert sum(item["showConnection"] for item in air) == 2
     assert sum(item["showConnection"] for item in water) == 1
 
 
@@ -177,22 +284,9 @@ def test_targets_represent_the_required_conceptual_zones() -> None:
 
 def test_mockup_positions_and_lower_row_order_are_centralized() -> None:
     positions = {item["key"]: item["position"]["desktop"] for item in _catalog_data()}
-    original_positions = {
-        "temperatura_aire": (39, 24),
-        "humedad_aire": (58, 24),
-        "humedad_hojas": (66, 36),
-        "temperatura_tierra": (40, 48),
-        "temperatura_bajo_tierra": (38, 76),
-        "humedad_tierra": (64, 76),
-        "ph_agua": (8, 50),
-        "sales_agua": (8, 57),
-        "temperatura_agua": (8, 64),
-        "altura_planta": (73, 47),
-        "largo_raiz": (51, 76),
-    }
     expected = {
-        key: {"x": x, "y": round(((y - 20) / 75) * 100, 4)}
-        for key, (x, y) in original_positions.items()
+        item["clave_educativa"]: {"x": item["posicion_x"], "y": item["posicion_y"]}
+        for item in BACKEND_ITEMS
     }
     assert positions == expected
     lower_row = sorted(
@@ -216,31 +310,21 @@ def test_crop_constants_and_css_percentage_mapping_are_explicit() -> None:
     assert "top:calc(var(--card-y)*1%)" in CSS
 
 
-def test_every_scene_y_coordinate_was_transformed_for_the_crop() -> None:
-    original = {
-        "temperatura_aire": (24, 32, [28]),
-        "humedad_aire": (24, 32, []),
-        "humedad_hojas": (36, 47, [42]),
-        "temperatura_tierra": (48, 59, [54]),
-        "temperatura_bajo_tierra": (76, 69, [72]),
-        "humedad_tierra": (76, 68, [72]),
-        "ph_agua": (50, 75, []),
-        "sales_agua": (57, 75, []),
-        "temperatura_agua": (64, 75, [70]),
-        "altura_planta": (47, 43.5, [45]),
-        "largo_raiz": (76, 72, [73]),
-    }
-    transform = lambda value: round(((value - 20) / 75) * 100, 4)
+def test_every_scene_coordinate_matches_the_backend_metadata_exactly() -> None:
+    by_key = {item["clave_educativa"]: item for item in BACKEND_ITEMS}
     for item in _catalog_data():
-        position_y, target_y, route_ys = original[item["key"]]
-        assert item["position"]["desktop"]["y"] == transform(position_y)
-        assert item["target"]["y"] == transform(target_y)
-        assert [point["y"] for point in item["route"]] == [transform(value) for value in route_ys]
+        source = by_key[item["key"]]
+        assert item["position"]["desktop"]["y"] == source["posicion_y"]
+        assert item["target"]["y"] == source["destino_y"]
+        expected_route = []
+        if source.get("ruta_punto1_x") is not None:
+            expected_route.append(source["ruta_punto1_y"])
+        if source.get("ruta_punto2_x") is not None:
+            expected_route.append(source["ruta_punto2_y"])
+        assert [point["y"] for point in item["route"]] == expected_route
     rulers = {item["key"]: item["ruler"] for item in _catalog_data() if item.get("ruler")}
-    assert rulers["altura_planta"]["y1"] == transform(59)
-    assert rulers["altura_planta"]["y2"] == transform(43.5)
-    assert rulers["largo_raiz"]["y1"] == transform(59)
-    assert rulers["largo_raiz"]["y2"] == transform(74.5)
+    assert rulers["altura_planta"] == by_key["altura_planta"]["regla"]
+    assert rulers["largo_raiz"] == by_key["largo_raiz"]["regla"]
 
 
 def test_independent_plant_and_root_rulers_have_ticks_without_fake_values() -> None:
@@ -306,9 +390,7 @@ def test_selection_emphasizes_target_and_softens_other_cards() -> None:
     assert "function restaurarCarteles()" in APP
 
 
-def test_stage_two_adds_no_backend_request_and_preserves_existing_features() -> None:
-    assert "fetch(" not in CATALOG
-    assert "fetch(" not in APP
+def test_stage_two_preserves_existing_dashboard_features() -> None:
     assert APP.count("fetchUltimasEducativas") == 2
     assert APP.count("fetchHistorialEducativo") == 2
     for function_name in ("crearLocalidades", "seleccionarLocalidad", "crearGraficos", "cargarHistorialClaves"):

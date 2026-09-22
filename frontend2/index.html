@@ -37,6 +37,7 @@
       <button class="tab-button" type="button" data-tab="plants" aria-selected="false">Medición de plantas</button>
       <button class="tab-button" type="button" data-tab="hanna" aria-selected="false">Cargar CSV Hanna</button>
       <button class="tab-button" type="button" data-tab="campaigns" aria-selected="false">Campañas del huerto</button>
+      <button class="tab-button" type="button" data-tab="posters" aria-selected="false">Carteles educativos</button>
     </nav>
 
     <section id="associations-view" class="tab-view">
@@ -82,16 +83,11 @@
         <form id="association-form">
           <input id="association-id" type="hidden">
           <div class="form-grid">
-            <label><span>Clave educativa *</span><input id="clave-educativa" name="clave_educativa" required placeholder="temperatura_tierra"></label>
-            <label><span>Nombre educativo *</span><input id="nombre-educativo" name="nombre_educativo" required placeholder="Temperatura de la tierra"></label>
+            <label><span>Cartel educativo *</span><select id="clave-educativa" name="clave_educativa" required><option value="">Selecciona un cartel</option></select></label>
             <label><span>Sensor *</span><select id="sensor-sn" name="sensor_sn" required><option value="">Selecciona un sensor</option></select></label>
             <label><span>Variable técnica *</span><select id="variable-tecnica" name="variable_tecnica" required><option value="">Selecciona una variable</option></select></label>
-            <label><span>Unidad *</span><input id="unidad" name="unidad" required placeholder="°C"></label>
-            <label><span>Categoría *</span><select id="categoria" name="categoria" required><option value="temperatura">Temperatura</option><option value="humedad">Humedad</option><option value="suelo">Suelo</option><option value="agua">Agua</option><option value="ambiente">Ambiente</option><option value="sistema">Sistema</option><option value="otra">Otra</option></select></label>
             <label><span>Ubicación</span><input id="ubicacion" name="ubicacion" placeholder="Cama de cultivo 1"></label>
             <label><span>Profundidad (cm)</span><input id="profundidad-cm" name="profundidad_cm" type="number" min="0" step="0.1" placeholder="15"></label>
-            <label><span>Orden *</span><input id="orden" name="orden" type="number" min="0" step="1" value="1" required></label>
-            <label class="checkbox-field"><input id="visible-frontend" name="visible_frontend" type="checkbox" checked><span>Visible en el frontend escolar</span></label>
           </div>
           <div class="form-actions">
             <button id="save-button" class="primary-button" type="submit">Guardar asociación</button>
@@ -153,8 +149,21 @@
 
       <section class="plant-summary-grid">
         <article class="plant-summary"><small>Colegio</small><strong id="plants-colegio">—</strong><span id="plants-localidad-nombre">Pica</span></article>
-        <article class="plant-summary highlight"><small>Promedio del día</small><strong><span id="daily-average">—</span> <em>cm</em></strong><span id="measured-count">0 plantas medidas</span></article>
-        <article class="plant-summary"><small>Último promedio guardado</small><strong><span id="last-average">—</span> <em>cm</em></strong><span id="last-average-date">Sin datos</span></article>
+        <article class="plant-summary highlight">
+          <small>Promedio del día</small>
+          <div class="summary-split">
+            <div class="summary-split-item"><strong><span id="daily-average">—</span> <em>cm</em></strong><label>Planta</label></div>
+            <div class="summary-split-item"><strong><span id="daily-root-length">—</span> <em>cm</em></strong><label>Raíz</label></div>
+          </div>
+          <span id="measured-count">0 plantas medidas</span>
+        </article>
+        <article class="plant-summary">
+          <small>Último guardado</small>
+          <div class="summary-split">
+            <div class="summary-split-item"><strong><span id="last-average">—</span> <em>cm</em></strong><label>Planta</label><span id="last-average-date">Sin datos</span></div>
+            <div class="summary-split-item"><strong><span id="last-root-length">—</span> <em>cm</em></strong><label>Raíz</label><span id="last-root-length-date">Sin datos</span></div>
+          </div>
+        </article>
       </section>
 
       <section class="plants-workspace">
@@ -162,13 +171,15 @@
           <header class="panel-heading"><div><p class="eyebrow">20 plantas</p><h2>Mediciones diarias</h2></div><span class="unit-pill">centímetros</span></header>
           <form id="plants-form">
             <div id="plants-inputs" class="plants-inputs"></div>
+            <div class="root-measurement-box"><label><span>Largo de la raíz visible (cm)</span><input id="plants-root-length" type="number" min="0.1" step="0.1" inputmode="decimal" placeholder="0,0"></label></div>
             <label class="observation-field"><span>Observación general opcional</span><textarea id="plants-observation" maxlength="1000" rows="3" placeholder="Estado general, clima o incidencia observada…"></textarea></label>
             <div class="form-actions"><button id="save-plants" class="primary-button" type="submit">Guardar mediciones</button><small>Los valores existentes para la misma fecha y planta se actualizarán.</small></div>
           </form>
         </article>
 
         <article class="panel chart-panel">
-          <header class="panel-heading"><div><p class="eyebrow">Últimos 30 días</p><h2>Promedio diario</h2></div><span id="chart-count" class="count-pill">0 días</span></header>
+          <header class="panel-heading"><div><p class="eyebrow">Últimos 30 días</p><h2>Evolución de Planta y Raíz</h2></div><span id="chart-count" class="count-pill">0 días</span></header>
+          <div id="plant-chart-legend" class="plant-chart-legend"><span class="legend-item plant"><i></i>Altura de planta</span><span class="legend-item root"><i></i>Largo de raíz</span></div>
           <div id="plant-chart" class="plant-chart"><p class="empty">Cargando promedios…</p></div>
         </article>
       </section>
@@ -227,6 +238,11 @@
           <p id="campaign-new-help" class="campaign-blocked-message" hidden>Para iniciar una nueva campaña, primero debe finalizar o cancelar la campaña activa.</p>
           <div id="campaign-active"><p class="empty">Selecciona un colegio para consultar su campaña.</p></div>
         </article>
+        <article class="panel campaign-overview-panel" hidden>
+          <header class="panel-heading"><div><p class="eyebrow">Configuración</p><h2>Umbrales por cartel</h2></div></header>
+          <p class="campaign-overview-hint">Rangos mínimos y máximos configurados para esta campaña.</p>
+          <div id="campaign-overview-body" class="campaign-overview-body"></div>
+        </article>
         <article class="panel campaign-new-panel" hidden>
           <header class="panel-heading"><div><p id="campaign-form-context" class="eyebrow">Nuevo ciclo</p><h2 id="campaign-form-title">Iniciar campaña</h2></div></header>
           <form id="campaign-form" data-mode="create" novalidate>
@@ -235,6 +251,14 @@
             <label><span>Fecha de siembra</span><input name="fecha_siembra" id="campaign-sowing" type="date" required><small data-campaign-error="fecha_siembra"></small></label>
             <label><span>Cosecha estimada</span><input name="fecha_cosecha_estimada" id="campaign-estimated" type="date" required><small data-campaign-error="fecha_cosecha_estimada"></small></label>
             <label><span>Observaciones opcionales</span><textarea name="observaciones" id="campaign-notes" maxlength="2000" rows="4"></textarea><small data-campaign-error="observaciones"></small></label>
+            <fieldset class="campaign-ranges">
+              <legend>Umbrales mínimos y máximos por cartel</legend>
+              <p class="campaign-ranges-hint">Opcional. Deja en blanco los carteles que no necesiten límites.</p>
+              <div class="campaign-ranges-table">
+                <div class="campaign-ranges-row campaign-ranges-head" aria-hidden="true"><span>Cartel</span><span>Mínimo</span><span>Máximo</span></div>
+                <div id="campaign-ranges-body"><p class="empty">Cargando catálogo de carteles…</p></div>
+              </div>
+            </fieldset>
             <div class="campaign-form-actions"><button id="campaign-submit" class="primary-button" type="submit">Iniciar campaña</button><button id="campaign-form-cancel" class="text-button" type="button">Cerrar formulario</button></div>
           </form>
         </article>
@@ -254,9 +278,67 @@
         <div id="campaign-history"><p class="empty">Sin campañas para mostrar.</p></div>
       </section>
     </section>
+
+    <section id="posters-view" class="tab-view" hidden>
+      <section class="workspace">
+        <article class="panel form-panel">
+          <header class="panel-heading">
+            <div><p class="eyebrow">Cartel educativo</p><h2 id="cartel-form-title">Crear cartel</h2></div>
+          </header>
+          <form id="cartel-form">
+            <div class="form-grid">
+              <label><span>Clave educativa *</span><input id="cartel-clave" name="clave_educativa" required placeholder="temperatura_tierra" pattern="[a-z0-9_]+"></label>
+              <label><span>Nombre educativo *</span><input id="cartel-nombre" name="nombre_educativo" required placeholder="Temperatura de la tierra"></label>
+              <label><span>Unidad *</span><input id="cartel-unidad" name="unidad" required placeholder="°C"></label>
+              <label><span>Categoría *</span><select id="cartel-categoria" name="categoria" required><option value="temperatura">Temperatura</option><option value="humedad">Humedad</option><option value="suelo">Suelo</option><option value="agua">Agua</option><option value="ambiente">Ambiente</option><option value="sistema">Sistema</option><option value="otra">Otra</option></select></label>
+              <label><span>Orden *</span><input id="cartel-orden" name="orden" type="number" min="0" step="1" value="1" required></label>
+              <label class="checkbox-field"><input id="cartel-visible" name="visible_frontend" type="checkbox" checked><span>Visible en el frontend escolar</span></label>
+            </div>
+            <details class="cartel-visual-details">
+              <summary>Datos visuales (avanzado)</summary>
+              <div class="form-grid">
+                <label><span>Ícono</span><input id="cartel-icono" name="icono" placeholder="temperature"></label>
+                <label><span>Grupo visual</span><select id="cartel-grupo-visual" name="grupo_visual"><option value="">Sin grupo</option><option value="air">Aire</option><option value="plant">Planta</option><option value="earth">Tierra y raíces</option><option value="water">Agua del estanque</option></select></label>
+                <label><span>Compartir conexión con</span><input id="cartel-compartir-conexion" name="compartir_conexion_con" placeholder="atmosphere"></label>
+                <label class="checkbox-field"><input id="cartel-mostrar-conexion" name="mostrar_conexion" type="checkbox" checked><span>Mostrar línea de conexión</span></label>
+                <label><span>Posición X (%)</span><input id="cartel-posicion-x" name="posicion_x" type="number" step="0.0001" min="0" max="100"></label>
+                <label><span>Posición Y (%)</span><input id="cartel-posicion-y" name="posicion_y" type="number" step="0.0001" min="0" max="100"></label>
+                <label><span>Destino X (%)</span><input id="cartel-destino-x" name="destino_x" type="number" step="0.0001" min="0" max="100"></label>
+                <label><span>Destino Y (%)</span><input id="cartel-destino-y" name="destino_y" type="number" step="0.0001" min="0" max="100"></label>
+                <label><span>Zona del destino</span><input id="cartel-destino-zona" name="destino_zona" placeholder="aire sobre el huerto"></label>
+                <label><span>Ruta punto 1 X (%)</span><input id="cartel-ruta1-x" name="ruta_punto1_x" type="number" step="0.0001" min="0" max="100"></label>
+                <label><span>Ruta punto 1 Y (%)</span><input id="cartel-ruta1-y" name="ruta_punto1_y" type="number" step="0.0001" min="0" max="100"></label>
+                <label><span>Ruta punto 2 X (%)</span><input id="cartel-ruta2-x" name="ruta_punto2_x" type="number" step="0.0001" min="0" max="100"></label>
+                <label><span>Ruta punto 2 Y (%)</span><input id="cartel-ruta2-y" name="ruta_punto2_y" type="number" step="0.0001" min="0" max="100"></label>
+                <label><span>Ancla</span><select id="cartel-ancla" name="ancla"><option value="">Sin definir</option><option value="top">Arriba</option><option value="right">Derecha</option><option value="bottom">Abajo</option><option value="left">Izquierda</option></select></label>
+                <label><span>Etiqueta corta</span><input id="cartel-etiqueta-corta" name="etiqueta_corta" placeholder="T° del aire"></label>
+                <label><span>Explicación</span><input id="cartel-explicacion" name="explicacion" placeholder="Indica qué tan cálido o frío está el aire…"></label>
+              </div>
+            </details>
+            <div class="form-actions">
+              <button id="cartel-save-button" class="primary-button" type="submit">Guardar cartel</button>
+              <button id="cartel-cancel-edit" class="text-button" type="button" hidden>Cancelar edición</button>
+            </div>
+          </form>
+        </article>
+      </section>
+
+      <section class="panel table-panel">
+        <header class="panel-heading">
+          <div><p class="eyebrow">Catálogo actual</p><h2>Carteles educativos</h2></div>
+          <span id="cartel-count" class="count-pill">Cargando…</span>
+        </header>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Orden</th><th>Cartel</th><th>Categoría</th><th>Unidad</th><th>Visible</th><th>Acciones</th></tr></thead>
+            <tbody id="carteles-body"><tr><td colspan="6" class="empty-cell">Cargando carteles…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
   </main>
 
   <footer>Huerto Vivo Escolar · Configuración administrativa local</footer>
-  <script type="module" src="app.js?v=9"></script>
+  <script type="module" src="app.js?v=11"></script>
 </body>
 </html>

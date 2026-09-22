@@ -61,10 +61,12 @@ def test_new_campaign_button_is_permanent_and_only_active_state_blocks_it() -> N
     assert "+ Nueva campaña" in campaigns
     assert "Para iniciar una nueva campaña, primero debe finalizar o cancelar la campaña activa." in campaigns
     assert 'class="panel campaign-new-panel" hidden' in campaigns
+    assert 'class="panel campaign-overview-panel" hidden' in campaigns
     assert 'item=>item.estado==="activa"' in APP
     assert 'active.item?.estado==="activa"' in APP
     assert "newButton.disabled=!campaignState.colegioId||blocked" in APP
-    assert 'newPanel.hidden=(blocked&&campaignState.mode!=="edit")||!campaignState.formOpen' in APP
+    assert "mostrarFormulario=campaignState.formOpen,mostrarResumen=Boolean(active)&&!mostrarFormulario" in APP
+    assert "newPanel.hidden=!mostrarFormulario;overviewPanel.hidden=!mostrarResumen" in APP
     assert "campaignState.formOpen=false;await cargarCampanias()" in APP
     assert "campaignState.formOpen=true;renderCampanias()" in APP
 

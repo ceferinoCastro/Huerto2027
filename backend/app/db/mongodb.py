@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+from time import monotonic
 from typing import Any
 from uuid import uuid4
 
@@ -42,6 +43,57 @@ CAMPAIGN_ACTIVE_COLLEGE_INDEX = "campania_activa_por_colegio_unique"
 SENSOR_ASSOCIATIONS_COLLECTION = "asociaciones_sensores"
 SENSOR_ASSOCIATION_UNIQUE_INDEX = "asociacion_colegio_variable_unique"
 SENSOR_ASSOCIATION_LOCALITY_INDEX = "asociacion_localidad_orden"
+CARTELS_COLLECTION = "carteles_educativos"
+CARTEL_ORDEN_INDEX = "cartel_orden_asc"
+CARTELS_CACHE_TTL_SECONDS = 30
+
+
+# Variables nativas del sensor ATMOS 14 que deben ofrecerse siempre en el
+# selector de variable técnica, incluso sin lecturas previas en `lecturas`
+# para esa clave exacta (p. ej. "Percent Relative Humidity" recién agregada).
+ATMOS_14_SENSOR_NAME = "ATMOS 14"
+ATMOS_14_BASE_VARIABLES: dict[str, str] = {
+    "Air Temperature": "°C",
+    "Vapor Pressure": "kPa",
+    "VPD": "kPa",
+    "Atmospheric Pressure": "kPa",
+    "Percent Relative Humidity": "%",
+}
+
+
+def _with_atmos_14_fallback_variables(
+    documents: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Guarantee every base ATMOS 14 variable appears, even without readings."""
+    atmos_documents = [
+        document for document in documents
+        if document.get("sensor_name") == ATMOS_14_SENSOR_NAME
+    ]
+    if not atmos_documents:
+        return documents
+
+    reference = atmos_documents[0]
+    present_variables = {document.get("variable") for document in atmos_documents}
+    missing_variables = [
+        variable for variable in ATMOS_14_BASE_VARIABLES
+        if variable not in present_variables
+    ]
+    if not missing_variables:
+        return documents
+
+    return documents + [
+        {
+            "device_sn": reference.get("device_sn"),
+            "sensor_sn": reference.get("sensor_sn"),
+            "sensor_name": ATMOS_14_SENSOR_NAME,
+            "variable": variable,
+            "value": None,
+            "units": ATMOS_14_BASE_VARIABLES[variable],
+            "datetime": None,
+            "timestamp_utc": None,
+        }
+        for variable in missing_variables
+    ]
 
 
 def build_readings_summary_pipeline(device_sn: str) -> list[dict[str, Any]]:
@@ -107,6 +159,8 @@ class MongoDatabase:
         self._settings = settings
         self._client: AsyncIOMotorClient | None = None
         self._database: AsyncIOMotorDatabase | None = None
+        self._carteles_cache: list[dict[str, Any]] | None = None
+        self._carteles_cache_at: float = 0.0
 
     async def connect(self) -> None:
         self._client = AsyncIOMotorClient(
@@ -143,15 +197,8 @@ class MongoDatabase:
         """Collect read-only evidence needed by the initial association dry-run."""
         if self._database is None:
             raise RuntimeError("MongoDB database is not initialized")
-        relevant = [
-            "Air Temperature",
-            "Relative Humidity",
-            "Leaf Wetness",
-            "Soil Temperature",
-            "Water Content",
-        ]
         pipeline = [
-            {"$match": {"variable": {"$in": relevant}, "value": {"$type": "number"}}},
+            {"$match": {"value": {"$type": "number"}}},
             {"$group": {
                 "_id": {
                     "device_sn": "$device_sn",
@@ -194,17 +241,45 @@ class MongoDatabase:
             "asociaciones": await self._database[SENSOR_ASSOCIATIONS_COLLECTION].find({}).to_list(length=1000),
         }
 
+    async def _ensure_index(
+        self,
+        collection: Any,
+        keys: list[tuple[str, int]],
+        *,
+        name: str,
+        unique: bool = False,
+    ) -> None:
+        """Create an index, replacing any stale definition under the same name.
+
+        `create_index` raises IndexKeySpecsConflict (code 86) if an index with
+        this `name` already exists with a different key spec — this happens
+        silently whenever the collection's real indexes drift from what the
+        code declares (e.g. a manually created or since-changed index). Since
+        this runs on every association save, that conflict surfaces as an
+        opaque 503 to the frontend instead of the actual schema issue.
+        """
+        existing = await collection.index_information()
+        current = existing.get(name)
+        if current is not None and (
+            list(current.get("key", [])) != list(keys)
+            or bool(current.get("unique", False)) != unique
+        ):
+            await collection.drop_index(name)
+        await collection.create_index(keys, name=name, unique=unique)
+
     async def ensure_sensor_association_indexes(self) -> None:
         if self._database is None:
             raise RuntimeError("MongoDB database is not initialized")
         collection = self._database[SENSOR_ASSOCIATIONS_COLLECTION]
-        await collection.create_index(
+        await self._ensure_index(
+            collection,
             [("colegio_id", ASCENDING), ("clave_educativa", ASCENDING)],
             name=SENSOR_ASSOCIATION_UNIQUE_INDEX,
             unique=True,
         )
-        await collection.create_index(
-            [("localidad", ASCENDING), ("orden", ASCENDING)],
+        await self._ensure_index(
+            collection,
+            [("localidad", ASCENDING)],
             name=SENSOR_ASSOCIATION_LOCALITY_INDEX,
         )
 
@@ -213,7 +288,7 @@ class MongoDatabase:
             raise RuntimeError("MongoDB database is not initialized")
         return await self._database[SENSOR_ASSOCIATIONS_COLLECTION].find(
             {"localidad": locality}
-        ).sort("orden", ASCENDING).to_list(length=100)
+        ).to_list(length=100)
 
     async def sensor_association(
         self, locality: str, educational_variable: str
@@ -224,8 +299,76 @@ class MongoDatabase:
             "localidad": locality,
             "clave_educativa": educational_variable,
             "estado_asociacion": {"$in": ["asociada", "provisional"]},
-            "visible_frontend": {"$ne": False},
         })
+
+    async def ensure_cartel_indexes(self) -> None:
+        if self._database is None:
+            raise RuntimeError("MongoDB database is not initialized")
+        collection = self._database[CARTELS_COLLECTION]
+        await collection.create_index([("orden", ASCENDING)], name=CARTEL_ORDEN_INDEX)
+        # No hace falta índice único adicional: _id ya es clave_educativa,
+        # Mongo garantiza su unicidad nativamente.
+
+    def _invalidate_carteles_cache(self) -> None:
+        self._carteles_cache = None
+
+    async def list_carteles(self, *, force_refresh: bool = False) -> list[dict[str, Any]]:
+        """Catálogo completo de carteles, cacheado en proceso por TTL corto."""
+        if self._database is None:
+            raise RuntimeError("MongoDB database is not initialized")
+        now = monotonic()
+        if (
+            not force_refresh
+            and self._carteles_cache is not None
+            and now - self._carteles_cache_at < CARTELS_CACHE_TTL_SECONDS
+        ):
+            return self._carteles_cache
+        items = await self._database[CARTELS_COLLECTION].find({}).sort(
+            "orden", ASCENDING
+        ).to_list(length=500)
+        self._carteles_cache = items
+        self._carteles_cache_at = now
+        return items
+
+    async def create_cartel(self, data: dict[str, Any]) -> dict[str, Any]:
+        if self._database is None:
+            raise RuntimeError("MongoDB database is not initialized")
+        await self.ensure_cartel_indexes()
+        now = datetime.now(timezone.utc)
+        document = {**data, "_id": data["clave_educativa"], "created_at": now, "updated_at": now}
+        try:
+            await self._database[CARTELS_COLLECTION].insert_one(document)
+        finally:
+            self._invalidate_carteles_cache()
+        return document
+
+    async def update_cartel(self, clave: str, data: dict[str, Any]) -> dict[str, Any]:
+        if self._database is None:
+            raise RuntimeError("MongoDB database is not initialized")
+        document = {**data, "updated_at": datetime.now(timezone.utc)}
+        result = await self._database[CARTELS_COLLECTION].find_one_and_update(
+            {"_id": clave},
+            {"$set": document},
+            return_document=True,
+        )
+        self._invalidate_carteles_cache()
+        if result is None:
+            raise DomainNotFoundError("Cartel no encontrado")
+        return result
+
+    async def delete_cartel(self, clave: str) -> None:
+        if self._database is None:
+            raise RuntimeError("MongoDB database is not initialized")
+        linked = await self._database[SENSOR_ASSOCIATIONS_COLLECTION].count_documents({
+            "clave_educativa": clave,
+            "estado_asociacion": {"$in": ["asociada", "provisional"]},
+        })
+        if linked:
+            raise DomainConflictError("No se puede eliminar un cartel con asociaciones activas")
+        result = await self._database[CARTELS_COLLECTION].delete_one({"_id": clave})
+        self._invalidate_carteles_cache()
+        if not result.deleted_count:
+            raise DomainNotFoundError("Cartel no encontrado")
 
     async def _hanna_serials_for_college(self, college_id: str) -> list[str]:
         if self._database is None:
@@ -489,18 +632,39 @@ class MongoDatabase:
     async def _validate_sensor_association(self, data: dict[str, Any]) -> None:
         if self._database is None:
             raise RuntimeError("MongoDB database is not initialized")
+        carteles = {item["_id"] for item in await self.list_carteles()}
+        if data["clave_educativa"] not in carteles:
+            raise DomainNotFoundError("La clave educativa no corresponde a ningún cartel existente")
         college = await self.college_by_id(data["colegio_id"])
         if locality_from_college(college) != data["localidad"]:
             raise DomainConflictError("El colegio no corresponde a la localidad indicada")
         if data["source"] == "zentra":
+            # Import diferido: evita el ciclo sensor_associations -> mongodb (LOCALITY_DEVICE_SN).
+            from app.services.sensor_associations import _VARIABLE_ALIASES
+
+            variable = data["variable_tecnica"]
+            accepted_variables = [variable, *_VARIABLE_ALIASES.get(variable, ())]
             evidence = await self._database["lecturas"].find_one({
                 "device_sn": data["device_sn"],
                 "sensor_sn": data["sensor_sn"],
-                "variable": data["variable_tecnica"],
+                "variable": {"$in": accepted_variables},
                 "value": {"$type": "number"},
             })
+            if evidence is None and variable in ATMOS_14_BASE_VARIABLES:
+                # Variable técnica nativa del ATMOS 14 sin lecturas históricas todavía
+                # (p. ej. recién habilitada). Se tolera si el sensor_sn corresponde a
+                # un ATMOS 14 real con evidencia de otras lecturas en este dispositivo.
+                evidence = await self._database["lecturas"].find_one({
+                    "device_sn": data["device_sn"],
+                    "sensor_sn": data["sensor_sn"],
+                    "sensor_name": ATMOS_14_SENSOR_NAME,
+                })
             if evidence is None:
-                raise DomainConflictError("El sensor no tiene lecturas reales para esa variable técnica")
+                raise DomainConflictError(
+                    "El sensor no tiene lecturas reales para esa variable técnica "
+                    f"({variable!r}); verifica el sensor_sn o que el dispositivo haya "
+                    "reportado datos para ese sensor."
+                )
         elif data["source"] == "hanna":
             assignment = await self._database[HANNA_DATALOGGERS_COLLECTION].find_one({
                 "serial_hanna": data["sensor_sn"],
@@ -553,6 +717,9 @@ class MongoDatabase:
 
     async def upsert_initial_sensor_associations(self, documents: list[dict[str, Any]]) -> dict[str, Any]:
         """Apply the reviewed proposal without overwriting manually curated rows."""
+        # Import diferido: evita el ciclo sensor_associations -> mongodb (LOCALITY_DEVICE_SN).
+        from app.services.sensor_associations import _ASSOCIATION_FIELDS
+
         if self._database is None:
             raise RuntimeError("MongoDB database is not initialized")
         await self.ensure_sensor_association_indexes()
@@ -567,7 +734,7 @@ class MongoDatabase:
                 if any(current.get(field) != raw.get(field) for field in ("source", "device_sn", "sensor_sn", "variable_tecnica")):
                     conflicts.append({"colegio_id": raw["colegio_id"], "clave_educativa": raw["clave_educativa"]})
                 continue
-            document = {key: value for key, value in raw.items() if key != "motivo"}
+            document = {key: value for key, value in raw.items() if key in _ASSOCIATION_FIELDS}
             result = await collection.update_one(
                 selector,
                 {"$set": document, "$setOnInsert": {"created_at": raw["updated_at"]}},
@@ -665,7 +832,7 @@ class MongoDatabase:
             hint=READINGS_SUMMARY_INDEX,
         )
         documents = await cursor.to_list(length=100)
-        return device_sn, documents
+        return device_sn, _with_atmos_14_fallback_variables(documents)
 
     async def readings_history_by_locality(
         self,
@@ -763,23 +930,34 @@ class MongoDatabase:
         locality: str,
         since_date: str,
     ) -> list[dict[str, Any]]:
-        """Return daily height averages for one locality."""
+        """Return daily height and root-length averages for one locality.
+
+        A day may have plant heights, a root-length measurement, or both —
+        `$avg` ignores missing/non-numeric fields on its own, so each average
+        is computed independently and comes back as `None` when that day has
+        no documents carrying that particular field (old records included).
+        """
         if self._database is None:
             raise RuntimeError("MongoDB database is not initialized")
         collection = self._database[PLANT_MEASUREMENTS_COLLECTION]
+        has_height = {"$and": [{"$isNumber": "$altura_cm"}, {"$gt": ["$altura_cm", 0]}]}
         pipeline = [
             {
                 "$match": {
                     "localidad": locality,
                     "fecha": {"$gte": since_date},
-                    "altura_cm": {"$type": "number", "$gt": 0},
+                    "$or": [
+                        {"altura_cm": {"$type": "number", "$gt": 0}},
+                        {"largo_raiz_cm": {"$type": "number", "$gt": 0}},
+                    ],
                 }
             },
             {
                 "$group": {
                     "_id": "$fecha",
                     "altura_promedio_cm": {"$avg": "$altura_cm"},
-                    "plantas_medidas": {"$sum": 1},
+                    "largo_raiz_promedio_cm": {"$avg": "$largo_raiz_cm"},
+                    "plantas_medidas": {"$sum": {"$cond": [has_height, 1, 0]}},
                 }
             },
             {"$sort": {"_id": ASCENDING}},
@@ -788,6 +966,7 @@ class MongoDatabase:
                     "_id": 0,
                     "fecha": "$_id",
                     "altura_promedio_cm": 1,
+                    "largo_raiz_promedio_cm": 1,
                     "plantas_medidas": 1,
                 }
             },
@@ -815,10 +994,28 @@ class MongoDatabase:
                 "_id": 0,
                 "planta_numero": 1,
                 "altura_cm": 1,
+                "largo_raiz_cm": 1,
                 "observacion": 1,
             },
         ).sort("planta_numero", ASCENDING)
         return await cursor.to_list(length=1000)
+
+    async def delete_plant_root_length_placeholder(
+        self,
+        locality: str,
+        cycle_id: str,
+        measurement_date: str,
+    ) -> None:
+        """Remove the sentinel planta_numero=0 document once a real plant height exists for that day."""
+        if self._database is None:
+            raise RuntimeError("MongoDB database is not initialized")
+        collection = self._database[PLANT_MEASUREMENTS_COLLECTION]
+        await collection.delete_one({
+            "localidad": locality,
+            "ciclo_id": cycle_id,
+            "fecha": measurement_date,
+            "planta_numero": 0,
+        })
 
     async def ensure_hanna_measurement_indexes(self) -> None:
         """Create indexes owned exclusively by `mediciones_hanna`."""
@@ -1219,6 +1416,7 @@ class MongoDatabase:
             "fecha_cosecha_real": None,
             "estado": "activa",
             "observaciones": data.get("observaciones", ""),
+            "rangos_variables": data.get("rangos_variables") or {},
             "created_at": now,
             "updated_at": now,
         }
@@ -1271,14 +1469,15 @@ class MongoDatabase:
 
     async def update_campaign(self, campaign_id: str, data: dict[str, Any]) -> dict[str, Any]:
         document = await self._active_campaign_document(campaign_id)
-        allowed = {"nombre", "cultivo", "fecha_siembra", "fecha_cosecha_estimada", "observaciones"}
+        allowed = {"nombre", "cultivo", "fecha_siembra", "fecha_cosecha_estimada", "observaciones", "rangos_variables"}
         if set(data) - allowed - {"revision"}:
             raise DomainConflictError("Solo puede editar los datos de la campaña activa")
         changes = {key: value.strip() if isinstance(value, str) else value
                    for key, value in data.items() if key in allowed}
         if not changes:
             raise DomainConflictError("Debe modificar al menos un campo de la campaña")
-        if any(key in changes and not changes[key] for key in allowed - {"observaciones"}):
+        # rangos_variables puede quedar como {} (sin umbrales configurados): no es un campo obligatorio.
+        if any(key in changes and not changes[key] for key in allowed - {"observaciones", "rangos_variables"}):
             raise DomainConflictError("Los campos obligatorios no pueden quedar vacíos")
         current = campaign_to_public(document)
         sowing = changes.get("fecha_siembra", current["fecha_siembra"])

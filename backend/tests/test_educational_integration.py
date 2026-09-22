@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.main import create_app
-from app.services.sensor_associations import EDUCATIONAL_VARIABLES
+from app.services.sensor_associations import EDUCATIONAL_POSTER_SEED
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -15,14 +15,11 @@ def association(locality, variable, source="zentra", **extra):
         "colegio_id": f"college-{locality}",
         "localidad": locality,
         "clave_educativa": variable,
-        "nombre_educativo": variable.replace("_", " ").title(),
         "source": source,
         "device_sn": extra.get("device_sn", "device-1"),
         "sensor_sn": extra.get("sensor_sn", "sensor-1"),
         "variable_tecnica": extra.get("variable_tecnica", "Technical Variable"),
-        "unidad": extra.get("unidad", "°C"),
         "estado_asociacion": extra.get("estado_asociacion", "asociada"),
-        "visible_frontend": extra.get("visible_frontend", True),
     }
 
 
@@ -40,7 +37,7 @@ class EducationalDatabase:
                 "pica", "temperatura_agua", "hanna", sensor_sn="HANNA-1"
             ),
             ("pica", "altura_planta"): association(
-                "pica", "altura_planta", "manual", variable_tecnica="altura_cm", unidad="cm"
+                "pica", "altura_planta", "manual", variable_tecnica="altura_cm"
             ),
             ("huara", "temperatura_aire"): association(
                 "huara", "temperatura_aire", sensor_sn="ATMOS-HUARA"
@@ -65,9 +62,12 @@ class EducationalDatabase:
         }
         self.campaign_calls = []
         self.series_calls = []
+        self.carteles = {item["clave_educativa"]: dict(item) for item in EDUCATIONAL_POSTER_SEED}
 
     async def connect(self): pass
     def close(self): pass
+    async def list_carteles(self, force_refresh=False):
+        return list(self.carteles.values())
     async def college_by_locality(self, locality):
         return {"_id": f"college-{locality}", "nombre": locality.title()}
     async def sensor_association(self, locality, variable):
@@ -158,7 +158,7 @@ def test_hanna_cards_resolve_from_college_equipment_without_sensor_association()
 def test_associated_sensor_without_readings_returns_sin_datos():
     database = EducationalDatabase()
     database.associations[("pica", "humedad_tierra")] = association(
-        "pica", "humedad_tierra", variable_tecnica="Water Content", unidad="m³/m³"
+        "pica", "humedad_tierra", variable_tecnica="Water Content"
     )
     app = create_app(Settings(_env_file=None), database)
     with TestClient(app) as client:
@@ -173,7 +173,7 @@ def test_hanna_without_equipment_and_manual_without_records_are_distinct():
     database = EducationalDatabase()
     database.hanna_equipment.pop("college-pica")
     database.associations[("pica", "largo_raiz")] = association(
-        "pica", "largo_raiz", "manual", variable_tecnica="largo_raiz_cm", unidad="cm"
+        "pica", "largo_raiz", "manual", variable_tecnica="largo_raiz_cm"
     )
     app = create_app(Settings(_env_file=None), database)
     with TestClient(app) as client:
@@ -190,8 +190,19 @@ def test_hanna_without_equipment_and_manual_without_records_are_distinct():
 
 def test_latest_summary_includes_additional_active_educational_variables():
     database = EducationalDatabase()
+    database.carteles["radiacion_solar"] = {
+        "clave_educativa": "radiacion_solar",
+        "nombre_educativo": "Radiación solar",
+        "categoria": "clima",
+        "unidad": "W/m²",
+        "orden": 12,
+        "visible_frontend": True,
+        "fuente_sugerida": "zentra",
+        "variable_tecnica_sugerida": "Solar Radiation",
+        "sensor_modelo_sugerido": None,
+    }
     database.associations[("pica", "radiacion_solar")] = association(
-        "pica", "radiacion_solar", variable_tecnica="Solar Radiation", unidad="W/m²"
+        "pica", "radiacion_solar", variable_tecnica="Solar Radiation"
     )
     database.latest[("pica", "radiacion_solar")] = {
         "value": 640.0,
@@ -206,7 +217,7 @@ def test_latest_summary_includes_additional_active_educational_variables():
     items = {item["variable"]: item for item in response.json()["items"]}
     assert items["radiacion_solar"]["valor"] == 640.0
     assert items["radiacion_solar"]["detalle_tecnico"]["sensor_modelo"] is None
-    assert response.json()["count"] == len(EDUCATIONAL_VARIABLES) + 1
+    assert response.json()["count"] == len(EDUCATIONAL_POSTER_SEED) + 1
 
 
 def test_latest_summary_exposes_the_single_ordered_poster_catalog():
@@ -219,7 +230,7 @@ def test_latest_summary_exposes_the_single_ordered_poster_catalog():
     assert len(catalog) == 11
     assert [item["orden"] for item in catalog] == list(range(1, 12))
     assert [item["clave_educativa"] for item in catalog] == [
-        definition[0] for definition in EDUCATIONAL_VARIABLES
+        item["clave_educativa"] for item in EDUCATIONAL_POSTER_SEED
     ]
     assert [item["fuente"] for item in catalog] == [
         "zentra", "zentra", "zentra", "zentra", "zentra", "zentra",
@@ -235,19 +246,19 @@ def test_latest_summary_exposes_the_single_ordered_poster_catalog():
 def test_latest_summary_returns_diagnostic_cards_when_backend_fails():
     database = EducationalDatabase()
 
-    async def fail(_locality):
+    async def fail(force_refresh=False):
         raise RuntimeError("database unavailable")
 
-    database.list_sensor_associations = fail
+    database.list_carteles = fail
     app = create_app(Settings(_env_file=None), database)
     with TestClient(app) as client:
         response = client.get("/api/v1/localidades/pica/variables-educativas/ultima")
 
     assert response.status_code == 503
-    assert len(response.json()["catalogo"]) == len(EDUCATIONAL_VARIABLES)
-    assert len(response.json()["items"]) == len(EDUCATIONAL_VARIABLES)
-    assert all(item["estado"] == "no_disponible" for item in response.json()["items"])
-    assert response.json()["items"][0]["mensaje"] == "No fue posible consultar esta medición"
+    assert response.json()["estado"] == "no_disponible"
+    assert response.json()["mensaje"] == "No fue posible consultar las mediciones"
+    assert response.json()["catalogo"] == []
+    assert response.json()["items"] == []
 
 
 def test_general_history_does_not_consult_campaign_and_explicit_campaign_does():

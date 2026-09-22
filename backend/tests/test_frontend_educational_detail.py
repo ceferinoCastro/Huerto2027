@@ -1,7 +1,5 @@
-import json
 from pathlib import Path
 import re
-import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,17 +26,12 @@ EXPECTED_EXPLANATIONS = {
 
 
 def _catalog() -> list[dict]:
-    script = (
-        f'import {{SENSOR_CARD_CATALOG}} from {json.dumps(CATALOG_PATH.as_uri())};'
-        'console.log(JSON.stringify(SENSOR_CARD_CATALOG));'
-    )
-    result = subprocess.run(
-        ["node", "--input-type=module", "-e", script],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return json.loads(result.stdout)
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from test_frontend_stage2_visualization import BACKEND_ITEMS, _cargar_catalogo_visual
+
+    return _cargar_catalogo_visual(BACKEND_ITEMS)
 
 
 def test_there_is_one_detail_panel_immediately_after_the_scene():

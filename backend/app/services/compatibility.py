@@ -64,6 +64,7 @@ def campaign_to_public(
         "observaciones_finales": document.get("observaciones_finales") or "",
         "motivo_cancelacion": document.get("motivo_cancelacion") or "",
         "categoria_motivo": document.get("categoria_motivo"),
+        "rangos_variables": document.get("rangos_variables") or {},
         "historial_cambios": history,
         "revision": int(document.get("revision") or 0),
         "created_at": document.get("created_at"),

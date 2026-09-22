@@ -66,6 +66,10 @@ export const fetchUltimasEducativas=localidad=>requestJSON("/localidades/"+encod
 export const crearAsociacion=payload=>requestJSON("/asociaciones-sensores",{method:"POST",body:JSON.stringify(payload)});
 export const actualizarAsociacion=(id,payload)=>requestJSON("/asociaciones-sensores/"+encodeURIComponent(id),{method:"PUT",body:JSON.stringify(payload)});
 export const eliminarAsociacion=id=>requestJSON("/asociaciones-sensores/"+encodeURIComponent(id),{method:"DELETE"});
+export const fetchCarteles=()=>requestJSON("/carteles");
+export const crearCartel=payload=>requestJSON("/carteles",{method:"POST",body:JSON.stringify(payload)});
+export const actualizarCartel=(clave,payload)=>requestJSON("/carteles/"+encodeURIComponent(clave),{method:"PUT",body:JSON.stringify(payload)});
+export const eliminarCartel=clave=>requestJSON("/carteles/"+encodeURIComponent(clave),{method:"DELETE"});
 export const guardarMedicionesPlantas=payload=>requestJSON("/mediciones-plantas",{method:"POST",body:JSON.stringify(payload)});
 export const fetchMedicionesPlantas=(localidad,fecha,cicloId="general")=>requestJSON("/mediciones-plantas?localidad="+encodeURIComponent(localidad)+"&fecha="+encodeURIComponent(fecha)+"&ciclo_id="+encodeURIComponent(cicloId));
 export const fetchPromediosPlantas=(localidad,dias=30)=>requestJSON("/mediciones-plantas/promedio?localidad="+encodeURIComponent(localidad)+"&dias="+encodeURIComponent(dias));

@@ -9,6 +9,12 @@
 .plant-summary { display: grid; gap: 4px; min-height: 105px; padding: 18px; border: 1px solid var(--line); border-radius: 15px; background: var(--paper); box-shadow: var(--shadow); }
 .plant-summary small { color: var(--muted); font-weight: 750; }.plant-summary strong { align-self: end; font-size: 23px; }.plant-summary > span { color: var(--muted); font-size: 12px; }.plant-summary em { color: var(--muted); font-size: 13px; font-style: normal; }
 .plant-summary.highlight { color: white; border-color: var(--green-dark); background: var(--green-dark); }.plant-summary.highlight small, .plant-summary.highlight > span, .plant-summary.highlight em { color: #d8e9dc; }
+.summary-split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.summary-split-item { display: grid; gap: 2px; min-width: 0; }
+.summary-split-item strong { font-size: 20px; }
+.summary-split-item label { color: var(--muted); font-size: 10px; font-weight: 850; text-transform: uppercase; letter-spacing: .03em; }
+.summary-split-item span { color: var(--muted); font-size: 11px; }
+.plant-summary.highlight .summary-split-item label, .plant-summary.highlight .summary-split-item span { color: #d8e9dc; }
 .plants-workspace { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(360px, .75fr); gap: 20px; align-items: start; }
 .measurements-panel, .chart-panel { padding: 22px; }.unit-pill { padding: 6px 9px; border-radius: 99px; color: var(--green-dark); background: var(--lime); font-size: 11px; font-weight: 850; }
 .plants-inputs { display: grid; grid-template-columns: repeat(5, minmax(105px, 1fr)); gap: 8px; }
@@ -18,9 +24,17 @@ fieldset.plant-input { display: grid; gap: 4px; min-width: 0; margin: 0; padding
 .plant-input legend { padding: 0 5px; color: var(--green-dark); font-size: 12px; font-weight: 900; }
 .plant-input label { display: grid; gap: 3px; }
 .height-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 5px; }.height-control > span { font-size: 10px; }
+.root-measurement-box { margin-top: 24px; margin-bottom: 8px; padding: 18px; border: 2px solid var(--green); border-radius: 12px; background: #fbf8eb; }
+.root-measurement-box span { display: block; margin-bottom: 8px; color: var(--green-dark); font-size: 16px; font-weight: 900; }
+.root-measurement-box input { width: 100%; max-width: 200px; padding: 10px; border: 1px solid #c9c7b7; border-radius: 9px; color: var(--ink); background: white; font-size: 16px; }
+.root-measurement-box input:focus { outline: 3px solid rgba(63, 127, 58, .18); border-color: var(--green); }
 .observation-field { display: grid; gap: 6px; margin-top: 16px; }.observation-field textarea { width: 100%; padding: 10px 11px; resize: vertical; border: 1px solid #c9c7b7; border-radius: 9px; color: var(--ink); background: white; font: inherit; }.observation-field textarea:focus { outline: 3px solid rgba(63, 127, 58, .18); border-color: var(--green); }
-.plant-chart { min-height: 330px; display: grid; place-items: center; padding: 8px; border-radius: 12px; background: #fbf8eb; }.plant-chart svg { width: 100%; height: auto; overflow: visible; }.plant-chart .grid { stroke: #ddd6bf; stroke-dasharray: 4 4; }.plant-chart .line { fill: none; stroke: var(--green); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }.plant-chart .point { fill: var(--green-dark); stroke: var(--paper); stroke-width: 3; }.plant-chart text { fill: var(--muted); font-size: 10px; font-weight: 700; }
+.plant-chart-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 10px; }
+.legend-item { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 800; }
+.legend-item i { display: inline-block; width: 18px; height: 4px; border-radius: 99px; background: var(--green); }
+.legend-item.root i { background: var(--amber); }
+.plant-chart { min-height: 330px; display: grid; place-items: center; padding: 8px; border-radius: 12px; background: #fbf8eb; }.plant-chart svg { width: 100%; height: auto; overflow: visible; }.plant-chart .grid { stroke: #ddd6bf; stroke-dasharray: 4 4; }.plant-chart .line { fill: none; stroke: var(--green); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }.plant-chart .point { fill: var(--green-dark); stroke: var(--paper); stroke-width: 3; }.plant-chart .line.root { stroke: var(--amber); }.plant-chart .point.root { fill: var(--amber); }.plant-chart text { fill: var(--muted); font-size: 10px; font-weight: 700; }
 .plant-chart .axis-label { fill: var(--green-dark); font-size: 10px; font-weight: 850; }
 .chart-empty { display: grid; gap: 8px; place-items: center; color: var(--muted); text-align: center; }.chart-empty strong { color: var(--ink); }
 @media (max-width: 1050px) { .plants-workspace { grid-template-columns: 1fr; }.plants-inputs { grid-template-columns: repeat(5, minmax(100px, 1fr)); } }
-@media (max-width: 760px) { .tabs { width: 100%; }.tab-button { flex: 1; padding-inline: 8px; }.plants-toolbar { align-items: stretch; flex-direction: column; }.toolbar-fields, .plant-summary-grid { grid-template-columns: 1fr; }.plants-inputs { grid-template-columns: repeat(2, minmax(110px, 1fr)); }.measurements-panel, .chart-panel { padding: 16px; } }
+@media (max-width: 760px) { .tabs { width: 100%; }.tab-button { flex: 1; padding-inline: 8px; }.plants-toolbar { align-items: stretch; flex-direction: column; }.toolbar-fields, .plant-summary-grid { grid-template-columns: 1fr; }.plants-inputs { grid-template-columns: repeat(2, minmax(110px, 1fr)); }.measurements-panel, .chart-panel { padding: 16px; }.root-measurement-box { padding: 14px; }.root-measurement-box input { max-width: none; } }

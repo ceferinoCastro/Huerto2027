@@ -66,6 +66,7 @@ class FakeMongoDatabase:
         self.plant_upsert_calls: list[list[dict]] = []
         self.plant_average_calls: list[tuple[str, str]] = []
         self.plant_measurement_calls: list[tuple[str, str, str]] = []
+        self.plant_root_length_placeholder_deletes: list[tuple[str, str, str]] = []
         self.hanna_upsert_results = hanna_upsert_results or [
             {"created": 0, "updated": 0}
         ]
@@ -170,6 +171,18 @@ class FakeMongoDatabase:
             (locality, measurement_date, cycle_id)
         )
         return self.plant_measurements
+
+    async def delete_plant_root_length_placeholder(
+        self,
+        locality: str,
+        cycle_id: str,
+        measurement_date: str,
+    ) -> None:
+        if not self.available:
+            raise RuntimeError("MongoDB is unavailable")
+        self.plant_root_length_placeholder_deletes.append(
+            (locality, cycle_id, measurement_date)
+        )
 
     async def upsert_hanna_measurements(
         self,
@@ -1030,6 +1043,8 @@ def test_save_daily_plant_measurements_builds_upsert_documents() -> None:
     documents = database.plant_upsert_calls[0]
     assert [item["planta_numero"] for item in documents] == [1, 2]
     assert [item["altura_cm"] for item in documents] == [12.5, 13.5]
+    assert documents[0]["largo_raiz_cm"] is None
+    assert "largo_raiz_cm" not in documents[1]
     assert all("largo_hoja_cm" not in item for item in documents)
     assert all("ancho_hoja_cm" not in item for item in documents)
     assert all(item["localidad"] == "pica" for item in documents)
@@ -1078,6 +1093,59 @@ def test_save_daily_plant_measurements_validates_heights_and_duplicates() -> Non
     assert database.plant_upsert_calls == []
 
 
+def test_root_length_alone_creates_a_sentinel_document_without_plant_heights() -> None:
+    database = FakeMongoDatabase(plant_upsert_result={"created": 1, "updated": 0})
+    payload = {
+        "localidad": "pica",
+        "fecha": "2026-09-02",
+        "largo_raiz_cm": 18.4,
+    }
+
+    with TestClient(build_test_app(database)) as client:
+        response = client.post("/api/v1/mediciones-plantas", json=payload)
+
+    assert response.status_code == 200
+    documents = database.plant_upsert_calls[0]
+    assert len(documents) == 1
+    assert documents[0]["planta_numero"] == 0
+    assert documents[0]["largo_raiz_cm"] == 18.4
+    assert "altura_cm" not in documents[0]
+    assert database.plant_root_length_placeholder_deletes == []
+
+
+def test_root_length_with_plant_heights_attaches_to_first_plant_and_clears_placeholder() -> None:
+    database = FakeMongoDatabase(plant_upsert_result={"created": 0, "updated": 2})
+    payload = {
+        "localidad": "pica",
+        "fecha": "2026-09-02",
+        "largo_raiz_cm": 20.1,
+        "mediciones": [
+            {"planta_numero": 1, "altura_cm": 12.5},
+            {"planta_numero": 2, "altura_cm": 13.5},
+        ],
+    }
+
+    with TestClient(build_test_app(database)) as client:
+        response = client.post("/api/v1/mediciones-plantas", json=payload)
+
+    assert response.status_code == 200
+    documents = database.plant_upsert_calls[0]
+    assert documents[0]["largo_raiz_cm"] == 20.1
+    assert "largo_raiz_cm" not in documents[1]
+    assert database.plant_root_length_placeholder_deletes == [("pica", "general", "2026-09-02")]
+
+
+def test_empty_payload_without_heights_or_root_length_is_rejected() -> None:
+    database = FakeMongoDatabase()
+    payload = {"localidad": "pica", "fecha": "2026-09-02"}
+
+    with TestClient(build_test_app(database)) as client:
+        response = client.post("/api/v1/mediciones-plantas", json=payload)
+
+    assert response.status_code == 422
+    assert database.plant_upsert_calls == []
+
+
 def test_get_daily_plant_measurements_returns_heights() -> None:
     database = FakeMongoDatabase(
         plant_measurements=[
@@ -1111,11 +1179,13 @@ def test_get_daily_plant_measurements_returns_heights() -> None:
             {
                 "planta_numero": 1,
                 "altura_cm": 10.0,
+                "largo_raiz_cm": None,
                 "observacion": "Buen estado",
             },
             {
                 "planta_numero": 2,
                 "altura_cm": 12.0,
+                "largo_raiz_cm": None,
                 "observacion": "Buen estado",
             },
         ],
@@ -1144,11 +1214,13 @@ def test_daily_plant_averages_returns_last_30_days() -> None:
             {
                 "fecha": "2026-09-01",
                 "altura_promedio_cm": 12.345,
+                "largo_raiz_promedio_cm": 18.4,
                 "plantas_medidas": 20,
             },
             {
                 "fecha": "2026-09-02",
                 "altura_promedio_cm": 13.1,
+                "largo_raiz_promedio_cm": None,
                 "plantas_medidas": 18,
             },
         ]
@@ -1168,11 +1240,13 @@ def test_daily_plant_averages_returns_last_30_days() -> None:
             {
                 "fecha": "2026-09-01",
                 "altura_promedio_cm": 12.35,
+                "largo_raiz_cm": 18.4,
                 "plantas_medidas": 20,
             },
             {
                 "fecha": "2026-09-02",
                 "altura_promedio_cm": 13.1,
+                "largo_raiz_cm": None,
                 "plantas_medidas": 18,
             },
         ],
@@ -1181,6 +1255,30 @@ def test_daily_plant_averages_returns_last_30_days() -> None:
         datetime.now(timezone.utc).date() - timedelta(days=29)
     ).isoformat()
     assert database.plant_average_calls == [("pica", expected_since)]
+
+
+def test_daily_plant_averages_are_null_safe_for_legacy_records_without_root_length() -> None:
+    database = FakeMongoDatabase(
+        plant_averages=[
+            {"fecha": "2026-08-20", "altura_promedio_cm": 10.0, "plantas_medidas": 5},
+        ]
+    )
+
+    with TestClient(build_test_app(database)) as client:
+        response = client.get(
+            "/api/v1/mediciones-plantas/promedio",
+            params={"localidad": "pica", "dias": 30},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["items"] == [
+        {
+            "fecha": "2026-08-20",
+            "altura_promedio_cm": 10.0,
+            "largo_raiz_cm": None,
+            "plantas_medidas": 5,
+        },
+    ]
 
 
 def test_plant_measurements_return_503_when_mongodb_is_unavailable() -> None:
@@ -1310,10 +1408,16 @@ def test_plant_averages_filter_invalid_heights_and_sort_by_date() -> None:
         "$match": {
             "localidad": "pica",
             "fecha": {"$gte": "2026-08-04"},
-            "altura_cm": {"$type": "number", "$gt": 0},
+            "$or": [
+                {"altura_cm": {"$type": "number", "$gt": 0}},
+                {"largo_raiz_cm": {"$type": "number", "$gt": 0}},
+            ],
         }
     }
     assert collection.pipeline[2] == {"$sort": {"_id": ASCENDING}}
+    assert set(collection.pipeline[1]["$group"]) == {
+        "_id", "altura_promedio_cm", "largo_raiz_promedio_cm", "plantas_medidas",
+    }
 
 
 @pytest.mark.parametrize(
@@ -1895,3 +1999,56 @@ def test_settings_are_loaded_from_environment(monkeypatch) -> None:
     assert settings.mongodb_database == "huerto2027_test"
     assert settings.mongodb_timeout_ms == 5000
     assert settings.enable_diagnostics is True
+
+
+def test_atmos_14_fallback_injects_missing_base_variables_using_known_sensor_sn() -> None:
+    from app.db.mongodb import ATMOS_14_BASE_VARIABLES, _with_atmos_14_fallback_variables
+
+    documents = [
+        {
+            "device_sn": "z6-real",
+            "sensor_sn": "ATMOS-1",
+            "sensor_name": "ATMOS 14",
+            "variable": "Air Temperature",
+            "value": 24.5,
+            "units": "°C",
+        },
+        {
+            "device_sn": "z6-real",
+            "sensor_sn": "T12-1",
+            "sensor_name": "TEROS 12",
+            "variable": "Soil Temperature",
+            "value": 18.0,
+            "units": "°C",
+        },
+    ]
+
+    result = _with_atmos_14_fallback_variables(documents)
+
+    atmos_variables = {
+        item["variable"]: item for item in result if item["sensor_name"] == "ATMOS 14"
+    }
+    assert set(atmos_variables) == set(ATMOS_14_BASE_VARIABLES)
+    assert atmos_variables["Air Temperature"]["value"] == 24.5
+    percent_humidity = atmos_variables["Percent Relative Humidity"]
+    assert percent_humidity["sensor_sn"] == "ATMOS-1"
+    assert percent_humidity["value"] is None
+    assert percent_humidity["units"] == "%"
+    assert any(item["variable"] == "Soil Temperature" for item in result)
+
+
+def test_atmos_14_fallback_does_nothing_without_an_existing_atmos_14_reading() -> None:
+    from app.db.mongodb import _with_atmos_14_fallback_variables
+
+    documents = [
+        {
+            "device_sn": "z6-real",
+            "sensor_sn": "T12-1",
+            "sensor_name": "TEROS 12",
+            "variable": "Soil Temperature",
+            "value": 18.0,
+            "units": "°C",
+        },
+    ]
+
+    assert _with_atmos_14_fallback_variables(documents) == documents

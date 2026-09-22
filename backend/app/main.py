@@ -4,6 +4,7 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.carteles import router as carteles_router
 from app.api.routes.diagnostics import router as diagnostics_router
 from app.api.routes.educational_measurements import router as educational_measurements_router
 from app.api.routes.campaigns import router as campaigns_router
@@ -78,6 +79,7 @@ def create_app(
     application.include_router(hanna_dataloggers_router, prefix=app_settings.api_v1_prefix)
     application.include_router(campaigns_router, prefix=app_settings.api_v1_prefix)
     application.include_router(sensor_associations_router, prefix=app_settings.api_v1_prefix)
+    application.include_router(carteles_router, prefix=app_settings.api_v1_prefix)
     application.include_router(educational_measurements_router, prefix=app_settings.api_v1_prefix)
     if app_settings.enable_diagnostics:
         application.include_router(

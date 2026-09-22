@@ -18,12 +18,26 @@ class StrictCampaignModel(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class VariableRange(StrictCampaignModel):
+    """Umbral opcional min/max para un cartel educativo dentro de una campaña."""
+
+    min: float | None = None
+    max: float | None = None
+
+    @model_validator(mode="after")
+    def validate_range(self):
+        if self.min is not None and self.max is not None and self.max < self.min:
+            raise ValueError("El umbral máximo no puede ser menor que el mínimo")
+        return self
+
+
 class CampaignCreateInput(StrictCampaignModel):
     colegio_id: str = Field(min_length=1)
     cultivo: str = Field(min_length=1, max_length=120)
     fecha_siembra: date
     fecha_cosecha_estimada: date
     observaciones: str = Field(default="", max_length=2000)
+    rangos_variables: dict[str, VariableRange] | None = None
 
     @model_validator(mode="after")
     def validate_dates(self):
@@ -46,12 +60,15 @@ class CampaignEditInput(StrictCampaignModel):
     fecha_cancelacion: date | None = None
     motivo_cancelacion: str | None = Field(default=None, max_length=2000)
     motivo_correccion: str | None = Field(default=None, max_length=1000)
+    rangos_variables: dict[str, VariableRange] | None = None
     revision: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def validate_update(self):
-        editable = self.model_fields_set - {"revision", "motivo_correccion"}
-        if not editable:
+        # rangos_variables puede enviarse como {} para borrar todos los umbrales,
+        # por lo que se excluye de la regla "un campo editado no puede ser nulo".
+        editable = self.model_fields_set - {"revision", "motivo_correccion", "rangos_variables"}
+        if not editable and "rangos_variables" not in self.model_fields_set:
             raise ValueError("Debe modificar al menos un campo de la campaña")
         for field in editable:
             if getattr(self, field) is None:
@@ -136,6 +153,7 @@ class CampaignResponse(BaseModel):
     observaciones_finales: str = ""
     motivo_cancelacion: str = ""
     categoria_motivo: str | None = None
+    rangos_variables: dict[str, VariableRange] = Field(default_factory=dict)
     historial_cambios: list[dict] = Field(default_factory=list)
     revision: int = 0
     created_at: datetime | None = None

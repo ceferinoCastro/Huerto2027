@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pymongo.errors import PyMongoError
@@ -35,10 +36,31 @@ async def save_daily_plant_measurements(
         }
         for measurement in payload.mediciones
     ]
+    # El largo de la raíz es un único valor diario (no por planta): se guarda
+    # en la primera planta medida ese día, o en un documento centinela
+    # (planta_numero=0) cuando no se registró ninguna altura ese día.
+    if documents:
+        documents[0]["largo_raiz_cm"] = payload.largo_raiz_cm
+    else:
+        documents.append({
+            "localidad": locality,
+            "colegio_id": payload.colegio_id,
+            "huerto_id": payload.huerto_id,
+            "ciclo_id": payload.ciclo_id,
+            "fecha": payload.fecha.isoformat(),
+            "planta_numero": 0,
+            "largo_raiz_cm": payload.largo_raiz_cm,
+            "observacion": payload.observacion or "",
+            "updated_at": now,
+        })
     try:
         result = await request.app.state.mongodb.upsert_plant_measurements(
             documents
         )
+        if documents[0]["planta_numero"] != 0:
+            await request.app.state.mongodb.delete_plant_root_length_placeholder(
+                locality, payload.ciclo_id, payload.fecha.isoformat()
+            )
     except (PyMongoError, RuntimeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -86,7 +108,8 @@ async def plant_measurements_by_date(
     items = [
         {
             "planta_numero": document["planta_numero"],
-            "altura_cm": document["altura_cm"],
+            "altura_cm": document.get("altura_cm"),
+            "largo_raiz_cm": document.get("largo_raiz_cm"),
             "observacion": document.get("observacion", ""),
         }
         for document in documents
@@ -121,14 +144,15 @@ async def daily_plant_averages(
             detail="MongoDB no está disponible",
         ) from exc
 
+    def _rounded_or_none(value: Any) -> float | None:
+        return round(float(value), 2) if value is not None else None
+
     items = [
         {
             "fecha": document["fecha"],
-            "altura_promedio_cm": round(
-                float(document["altura_promedio_cm"]),
-                2,
-            ),
-            "plantas_medidas": int(document["plantas_medidas"]),
+            "altura_promedio_cm": _rounded_or_none(document.get("altura_promedio_cm")),
+            "largo_raiz_cm": _rounded_or_none(document.get("largo_raiz_promedio_cm")),
+            "plantas_medidas": int(document.get("plantas_medidas") or 0),
         }
         for document in documents
     ]

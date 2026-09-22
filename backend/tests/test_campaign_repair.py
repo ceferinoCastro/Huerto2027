@@ -52,6 +52,12 @@ class CampaignCollection:
                 return SimpleNamespace(matched_count=1)
         return SimpleNamespace(matched_count=0)
 
+    async def create_index(self, *args, **kwargs):
+        return None
+
+    async def insert_one(self, document):
+        self.documents.append(deepcopy(document))
+
 
 class CampaignDatabase(MongoDatabase):
     def __init__(self):
@@ -145,6 +151,58 @@ def test_edit_rejects_protected_fields_and_invalid_values(payload, status):
     with TestClient(app) as client:
         assert client.patch(BASE, json=payload).status_code == status
     assert not db.collection.writes
+
+
+def test_edit_can_set_and_clear_variable_thresholds():
+    app, db = safe_app()
+    with TestClient(app) as client:
+        set_ranges = client.patch(BASE, json={
+            "revision": 0,
+            "rangos_variables": {
+                "temperatura_aire": {"min": 10.0, "max": 35.0},
+                "humedad_tierra": {"min": None, "max": 60.0},
+            },
+        })
+        assert set_ranges.status_code == 200, set_ranges.text
+        assert set_ranges.json()["rangos_variables"] == {
+            "temperatura_aire": {"min": 10.0, "max": 35.0},
+            "humedad_tierra": {"min": None, "max": 60.0},
+        }
+        clear_ranges = client.patch(BASE, json={"revision": 1, "rangos_variables": {}})
+        assert clear_ranges.status_code == 200, clear_ranges.text
+        assert clear_ranges.json()["rangos_variables"] == {}
+
+
+def test_variable_threshold_rejects_max_below_min():
+    app, db = safe_app()
+    with TestClient(app) as client:
+        response = client.patch(BASE, json={
+            "revision": 0,
+            "rangos_variables": {"temperatura_aire": {"min": 30.0, "max": 10.0}},
+        })
+    assert response.status_code == 422
+    assert not db.collection.writes
+
+
+def test_legacy_campaign_without_variable_thresholds_returns_empty_dict():
+    app, db = safe_app()
+    assert "rangos_variables" not in db.collection.documents[0]
+    with TestClient(app) as client:
+        response = client.get("/api/v1/campanias?colegio_id=huayquique-test")
+    assert response.json()["items"][0]["rangos_variables"] == {}
+
+
+def test_create_campaign_persists_variable_thresholds():
+    app, db = safe_app()
+    with TestClient(app) as client:
+        db.collection.documents.clear()
+        response = client.post("/api/v1/campanias", json={
+            "colegio_id": "huayquique-test", "cultivo": "lechuga",
+            "fecha_siembra": "2026-09-01", "fecha_cosecha_estimada": "2026-12-01",
+            "rangos_variables": {"ph_agua": {"min": 6.0, "max": 7.5}},
+        })
+    assert response.status_code == 201, response.text
+    assert response.json()["rangos_variables"] == {"ph_agua": {"min": 6.0, "max": 7.5}}
 
 
 def test_atomic_conflict_does_not_overwrite_campaign():

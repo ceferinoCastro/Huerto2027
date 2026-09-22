@@ -46,3 +46,9 @@ export const ENDPOINT_HISTORIAL_EDUCATIVO = (localidad,variable,horas,puntos=60,
  url.search=new URLSearchParams(parametros);
  return url.toString();
 };
+
+export const ENDPOINT_CAMPANIA_ACTIVA = colegioId => {
+ const url=new URL(API_V1 + "/campanias/activa");
+ url.search=new URLSearchParams({colegio_id:colegioId});
+ return url.toString();
+};

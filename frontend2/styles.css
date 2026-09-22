@@ -72,8 +72,14 @@ select:focus, input:focus { outline: 3px solid rgba(63, 127, 58, .18); border-co
 .poster-card.ok { border-top-color: var(--green); }.poster-card.loading { border-top-color: var(--amber); }.poster-card.error { border-top-color: var(--red); }
 .poster-card-title { display: flex; align-items: center; gap: 9px; min-height: 42px; }
 .poster-card-title > span { display: grid; flex: 0 0 auto; width: 34px; height: 34px; place-items: center; border-radius: 9px; background: var(--lime); font-size: 18px; }
-.poster-card h3 { margin: 0; font-size: 15px; line-height: 1.25; }
-.poster-card-value { display: block; margin: 15px 0 7px; font-size: 21px; line-height: 1.25; }
+.poster-card-title h3 { flex: 1 1 auto; min-width: 0; }
+.status-dot { display: inline-block; flex: 0 0 auto; width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 0 2px white, 0 0 0 3px var(--line); }
+.poster-card-title > span.status-dot { width: 12px; height: 12px; padding: 0; margin-left: auto; border-radius: 50%; font-size: 0; }
+.status-dot-green { background: var(--green); }
+.status-dot-yellow { background: var(--amber); }
+.status-dot-red { background: var(--red); }
+.poster-card h3 { margin: 0; color: var(--muted); font-size: 1rem; font-weight: 600; line-height: 1.25; }
+.poster-card-value { display: block; margin: 15px 0 7px; font-size: clamp(1.6rem, 1.1rem + 2vw, 2.2rem); font-weight: 800; line-height: 1.15; }
 .poster-card time, .poster-card-source { color: var(--muted); font-size: 12px; }
 .poster-card-state { width: fit-content; margin-top: 12px; padding: 4px 7px; border-radius: 999px; color: #654f29; background: #eee3c8; font-size: 11px; font-weight: 850; }
 .poster-card.ok .poster-card-state { color: #1f5832; background: #d9efc5; }.poster-card.error .poster-card-state { color: #812d25; background: #f7ccc4; }
