@@ -125,3 +125,5 @@ build/
 repomix-output.*
 frontend/js/Copia de graficos.js
 frontend/img/huerto-escolar-limpio-recortado_rsp_00.png
+
+.puntos-de-retorno/
